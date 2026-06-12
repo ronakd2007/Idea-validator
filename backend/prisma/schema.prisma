@@ -1,0 +1,275 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  password      String
+  role          String   // FOUNDER | VALIDATOR | ADMIN
+  phone         String?
+  phoneVerified Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  validatorProfile ValidatorProfile?
+  ideas            Idea[]
+  validations      ValidationResponse[]
+  payments         Payment[]
+}
+
+model ValidatorProfile {
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  occupation         String
+  yearsOfExperience  Int
+  areasOfExpertise   String
+  linkedinUrl        String
+  contactPreferences String    @default("[]")
+  isApproved         Boolean   @default(false)
+  approvedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+model Idea {
+  id                  String   @id @default(cuid())
+  founderId           String
+  founder             User     @relation(fields: [founderId], references: [id])
+  title               String
+  industryCategory    String
+  problemStatement    String
+  solutionDescription String
+  targetCustomer      String
+  revenueModel        String
+  stage               String
+  founderContext      String?
+  isRevision          Boolean  @default(false)
+  revisionOf          String?
+  version             Int      @default(1)
+  paymentStatus       String   @default("PENDING")
+  submittedAt         DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  selfAssessment FounderFitSelfAssessment?
+  validations    ValidationResponse[]
+  payments       Payment[]
+}
+
+model FounderFitSelfAssessment {
+  id                 String @id @default(cuid())
+  ideaId             String @unique
+  idea               Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  industryKnowledge  Int
+  relevantExperience Int
+  networkAccess      Int
+  passion            Int
+  skillAlignment     Int
+}
+
+model ValidationResponse {
+  id          String   @id @default(cuid())
+  ideaId      String
+  idea        Idea     @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  validatorId String
+  validator   User     @relation(fields: [validatorId], references: [id])
+  createdAt   DateTime @default(now())
+
+  marketOpportunity      MarketOpportunityScore?
+  feasibility            FeasibilityScore?
+  founderFit             FounderFitScore?
+  revenuePotential       RevenuePotentialScore?
+  scalability            ScalabilityScore?
+  riskAssessment         RiskAssessment?
+  investorAttractiveness InvestorAttractivenessScore?
+  innovation             InnovationScore?
+  socialImpact           SocialImpactScore?
+  customerValidation     CustomerValidation?
+  sharkTank              SharkTankScore?
+  startupSuccess         StartupSuccessScore?
+  openFeedback           OpenFeedback?
+
+  @@unique([ideaId, validatorId])
+}
+
+model MarketOpportunityScore {
+  id                   String             @id @default(cuid())
+  validationResponseId String             @unique
+  validationResponse   ValidationResponse @relation(fields: [validationResponseId], references: [id], onDelete: Cascade)
+  problemSeverity      Int
+  marketSize           Int
+  willingnessToPay     Int
+  marketGrowthRate     Int
+  competitionGap       Int
+}
+
+model FeasibilityScore {
+  id                   String             @id @default(cuid())
+  validationResponseId String             @unique
+  validationResponse   ValidationResponse @relation(fields: [validationResponseId], references: [id], onDelete: Cascade)
+  technicalComplexity  Int
+  capitalRequirement   Int
+  regulatoryDifficulty Int
+  talentAvailability   Int
+  timeToLaunch         Int
+}
+
+model FounderFitScore {
+  id                   String             @id @default(cuid())
+  validationResponseId String             @unique
+  validationResponse   ValidationResponse @relation(fields: [validationResponseId], references: [id], onDelete: Cascade)
+  industryKnowledge    Int
+  relevantExperience   Int
+  networkAccess        Int
+  passion              Int
+  skillAlignment       Int
+}
+
+model RevenuePotentialScore {
+  id                        String             @id @default(cuid())
+  validationResponseId      String             @unique
+  validationResponse        ValidationResponse @relation(fields: [validationResponseId], references: [id], onDelete: Cascade)
+  pricingPower              Int
+  recurringRevenuePotential Int
+  profitMarginPotential     Int
+  upsellOpportunities       Int
+  customerLifetimeValue     Int
+}
+
+model ScalabilityScore {
+  id                    String             @id @default(cuid())
+  validationResponseId  String             @unique
+  validationResponse    ValidationResponse @relation(fields: [validationResponseId], references: [id], onDelete: Cascade)
+  geographicExpansion   Int
+  automationPotential   Int
+  operationalComplexity Int
+  dependenceOnFounder   Int
+  networkEffects        Int
+}
+
+model RiskAssessment {
+  id                        String             @id @default(cuid())
+  validationResponseId      String             @unique
+  validationResponse        ValidationResponse @relation(fields: [validationResponseId], references: [id], onDelete: Cascade)
+  competitionProbability    String
+  competitionImpact         String
+  regulatoryProbability     String
+  regulatoryImpact          String
+  technologyProbability     String
+  technologyImpact          String
+  fundingProbability        String
+  fundingImpact             String
+  marketAdoptionProbability String
+  marketAdoptionImpact      String
+}
+
+model InvestorAttractivenessScore {
+  id                   String             @id @default(cuid())
+  validationResponseId String             @unique
+  validationResponse   ValidationResponse @relation(fields: [validationResponseId], references: [id], onDelete: Cascade)
+  marketSize           Int
+  growthPotential      Int
+  scalability          Int
+  exitPotential        Int
+  defensibility        Int
+}
+
+model InnovationScore {
+  id                   String             @id @default(cuid())
+  validationResponseId String             @unique
+  validationResponse   ValidationResponse @relation(fields: [validationResponseId], references: [id], onDelete: Cascade)
+  uniqueness           Int
+  patentability        Int
+  competitiveAdvantage Int
+  disruptionPotential  Int
+  defensibility        Int
+}
+
+model SocialImpactScore {
+  id                   String             @id @default(cuid())
+  validationResponseId String             @unique
+  validationResponse   ValidationResponse @relation(fields: [validationResponseId], references: [id], onDelete: Cascade)
+  jobCreation          Int
+  environmentalBenefit Int
+  communityBenefit     Int
+  inclusion            Int
+  sustainability       Int
+}
+
+model CustomerValidation {
+  id                     String             @id @default(cuid())
+  validationResponseId   String             @unique
+  validationResponse     ValidationResponse @relation(fields: [validationResponseId], references: [id], onDelete: Cascade)
+  wouldUse               Boolean
+  wouldPay               Boolean
+  wouldRecommend         Boolean
+  solvesRealProblem      Boolean
+  betterThanAlternatives Boolean
+}
+
+model SharkTankScore {
+  id                   String             @id @default(cuid())
+  validationResponseId String             @unique
+  validationResponse   ValidationResponse @relation(fields: [validationResponseId], references: [id], onDelete: Cascade)
+  problemImportance    Int
+  marketSize           Int
+  revenuePotential     Int
+  executionEase        Int
+  scalability          Int
+}
+
+model StartupSuccessScore {
+  id                     String             @id @default(cuid())
+  validationResponseId   String             @unique
+  validationResponse     ValidationResponse @relation(fields: [validationResponseId], references: [id], onDelete: Cascade)
+  founderTeam            Int
+  marketSize             Int
+  productDifferentiation Int
+  traction               Int
+  businessModel          Int
+  competition            Int
+  timing                 Int
+  fundingReadiness       Int
+}
+
+model OpenFeedback {
+  id                   String             @id @default(cuid())
+  validationResponseId String             @unique
+  validationResponse   ValidationResponse @relation(fields: [validationResponseId], references: [id], onDelete: Cascade)
+  biggestStrength      String
+  biggestWeakness      String
+  suggestedImprovement String
+}
+
+model OtpVerification {
+  id        String   @id @default(cuid())
+  phone     String
+  otp       String
+  expiresAt DateTime
+  isUsed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Payment {
+  id               String   @id @default(cuid())
+  ideaId           String
+  idea             Idea     @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  founderId        String
+  founder          User     @relation(fields: [founderId], references: [id])
+  amount           Float
+  currency         String   @default("USD")
+  gateway          String
+  gatewayPaymentId String?
+  status           String   @default("PENDING")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}

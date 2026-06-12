@@ -1,0 +1,225 @@
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+
+@Injectable()
+export class IdeasService {
+  constructor(private prisma: PrismaService) {}
+
+  async create(founderId: string, data: any) {
+    const { selfAssessment, ...ideaData } = data;
+    return this.prisma.idea.create({
+      data: {
+        ...ideaData,
+        founderId,
+        paymentStatus: 'PENDING',
+        selfAssessment: selfAssessment ? { create: selfAssessment } : undefined,
+      },
+      include: { selfAssessment: true },
+    });
+  }
+
+  async findAllForValidator() {
+    return this.prisma.idea.findMany({
+      where: { paymentStatus: 'COMPLETED' },
+      include: {
+        founder: { select: { id: true, name: true } },
+        selfAssessment: true,
+        _count: { select: { validations: true } },
+      },
+      orderBy: { submittedAt: 'desc' },
+    });
+  }
+
+  async findMyIdeas(founderId: string) {
+    return this.prisma.idea.findMany({
+      where: { founderId },
+      include: {
+        selfAssessment: true,
+        _count: { select: { validations: true } },
+        payments: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findOne(id: string) {
+    const idea = await this.prisma.idea.findUnique({
+      where: { id },
+      include: {
+        founder: { select: { id: true, name: true } },
+        selfAssessment: true,
+        _count: { select: { validations: true } },
+      },
+    });
+    if (!idea) throw new NotFoundException('Idea not found');
+    return idea;
+  }
+
+  async getDashboard(ideaId: string, founderId: string) {
+    const idea = await this.prisma.idea.findUnique({
+      where: { id: ideaId },
+      include: {
+        selfAssessment: true,
+        validations: {
+          include: {
+            validator: { select: { id: true, name: true, email: true, validatorProfile: true } },
+            marketOpportunity: true,
+            feasibility: true,
+            founderFit: true,
+            revenuePotential: true,
+            scalability: true,
+            riskAssessment: true,
+            investorAttractiveness: true,
+            innovation: true,
+            socialImpact: true,
+            customerValidation: true,
+            sharkTank: true,
+            startupSuccess: true,
+            openFeedback: true,
+          },
+        },
+      },
+    });
+
+    if (!idea) throw new NotFoundException('Idea not found');
+    if (idea.founderId !== founderId) throw new ForbiddenException('Access denied');
+
+    return { available: true, idea, aggregated: this.aggregateScores(idea.validations) };
+  }
+
+  private avg(arr: number[]) {
+    return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+  }
+
+  private pct(arr: boolean[]) {
+    return arr.length ? (arr.filter(Boolean).length / arr.length) * 100 : 0;
+  }
+
+  private aggregateScores(validations: any[]) {
+    if (!validations.length) return { totalValidations: 0 };
+
+    const sum5 = (obj: any, keys: string[]) => keys.reduce((s, k) => s + (obj[k] || 0), 0);
+
+    const marketScores = validations.filter(v => v.marketOpportunity).map(v =>
+      sum5(v.marketOpportunity, ['problemSeverity', 'marketSize', 'willingnessToPay', 'marketGrowthRate', 'competitionGap']));
+    const feasScores = validations.filter(v => v.feasibility).map(v =>
+      sum5(v.feasibility, ['technicalComplexity', 'capitalRequirement', 'regulatoryDifficulty', 'talentAvailability', 'timeToLaunch']));
+    const founderScores = validations.filter(v => v.founderFit).map(v =>
+      sum5(v.founderFit, ['industryKnowledge', 'relevantExperience', 'networkAccess', 'passion', 'skillAlignment']));
+    const revenueScores = validations.filter(v => v.revenuePotential).map(v =>
+      sum5(v.revenuePotential, ['pricingPower', 'recurringRevenuePotential', 'profitMarginPotential', 'upsellOpportunities', 'customerLifetimeValue']));
+    const scaleScores = validations.filter(v => v.scalability).map(v =>
+      sum5(v.scalability, ['geographicExpansion', 'automationPotential', 'operationalComplexity', 'dependenceOnFounder', 'networkEffects']));
+    const innovScores = validations.filter(v => v.innovation).map(v =>
+      sum5(v.innovation, ['uniqueness', 'patentability', 'competitiveAdvantage', 'disruptionPotential', 'defensibility']));
+    const socialScores = validations.filter(v => v.socialImpact).map(v =>
+      sum5(v.socialImpact, ['jobCreation', 'environmentalBenefit', 'communityBenefit', 'inclusion', 'sustainability']));
+    const investorScores = validations.filter(v => v.investorAttractiveness).map(v =>
+      sum5(v.investorAttractiveness, ['marketSize', 'growthPotential', 'scalability', 'exitPotential', 'defensibility']));
+
+    const sharkScores = validations.filter(v => v.sharkTank).map(v =>
+      (v.sharkTank.problemImportance / 10) * 25 + (v.sharkTank.marketSize / 10) * 20 +
+      (v.sharkTank.revenuePotential / 10) * 20 + (v.sharkTank.executionEase / 10) * 15 +
+      (v.sharkTank.scalability / 10) * 20);
+
+    // Weighted formula: Team 25% + Market 20% + Product 15% + Traction 15% + BizModel 10% + Competition 5% + Timing 5% + Funding 5%
+    const successScores = validations.filter(v => v.startupSuccess).map(v =>
+      (v.startupSuccess.founderTeam / 10) * 25 +
+      (v.startupSuccess.marketSize / 10) * 20 +
+      (v.startupSuccess.productDifferentiation / 10) * 15 +
+      (v.startupSuccess.traction / 10) * 15 +
+      (v.startupSuccess.businessModel / 10) * 10 +
+      (v.startupSuccess.competition / 10) * 5 +
+      (v.startupSuccess.timing / 10) * 5 +
+      (v.startupSuccess.fundingReadiness / 10) * 5);
+
+    const cvList = validations.filter(v => v.customerValidation);
+
+    const riskSummary: any = {};
+    validations.filter(v => v.riskAssessment).forEach(v => {
+      const ra = v.riskAssessment;
+      ['competition', 'regulatory', 'technology', 'funding', 'marketAdoption'].forEach(risk => {
+        if (!riskSummary[risk]) riskSummary[risk] = { LOW: 0, MEDIUM: 0, HIGH: 0 };
+        riskSummary[risk][ra[`${risk}Probability`]]++;
+      });
+    });
+
+    const openFeedbacks = validations.filter(v => v.openFeedback).map(v => {
+      const prefs = JSON.parse(v.validator.validatorProfile?.contactPreferences || '[]');
+      const sharesContact = Array.isArray(prefs) ? prefs.length > 0 : false;
+      return {
+        strength: v.openFeedback.biggestStrength,
+        weakness: v.openFeedback.biggestWeakness,
+        improvement: v.openFeedback.suggestedImprovement,
+        validatorName: 'Anonymous',
+      };
+    });
+
+    const interestedContacts = validations
+      .filter(v => {
+        const prefs = JSON.parse(v.validator.validatorProfile?.contactPreferences || '[]');
+        return Array.isArray(prefs) && prefs.length > 0;
+      })
+      .map(v => ({
+        name: v.validator.name,
+        email: v.validator.email,
+        contactPreferences: JSON.parse(v.validator.validatorProfile?.contactPreferences || '[]'),
+        occupation: v.validator.validatorProfile?.occupation,
+      }));
+
+    const normalizedScores = [
+      marketScores.length ? (this.avg(marketScores) / 50) * 100 : null,
+      feasScores.length ? (this.avg(feasScores) / 50) * 100 : null,
+      founderScores.length ? (this.avg(founderScores) / 50) * 100 : null,
+      revenueScores.length ? (this.avg(revenueScores) / 50) * 100 : null,
+      scaleScores.length ? (this.avg(scaleScores) / 50) * 100 : null,
+      innovScores.length ? (this.avg(innovScores) / 50) * 100 : null,
+      socialScores.length ? (this.avg(socialScores) / 50) * 100 : null,
+    ].filter(s => s !== null) as number[];
+
+    return {
+      totalValidations: validations.length,
+      overallScore: this.avg(normalizedScores),
+      marketOpportunityAvg: this.avg(marketScores),
+      feasibilityAvg: this.avg(feasScores),
+      founderFitAvg: this.avg(founderScores),
+      revenuePotentialAvg: this.avg(revenueScores),
+      scalabilityAvg: this.avg(scaleScores),
+      innovationAvg: this.avg(innovScores),
+      socialImpactAvg: this.avg(socialScores),
+      investorAttractivenessAvg: this.avg(investorScores),
+      sharkTankAvg: this.avg(sharkScores),
+      startupSuccessAvg: this.avg(successScores),
+      customerValidation: {
+        wouldUse: this.pct(cvList.map(v => v.customerValidation.wouldUse)),
+        wouldPay: this.pct(cvList.map(v => v.customerValidation.wouldPay)),
+        wouldRecommend: this.pct(cvList.map(v => v.customerValidation.wouldRecommend)),
+        solvesRealProblem: this.pct(cvList.map(v => v.customerValidation.solvesRealProblem)),
+        betterThanAlternatives: this.pct(cvList.map(v => v.customerValidation.betterThanAlternatives)),
+      },
+      riskSummary,
+      openFeedbacks,
+      interestedContacts,
+    };
+  }
+
+  async createRevision(originalIdeaId: string, founderId: string, data: any) {
+    const original = await this.prisma.idea.findUnique({ where: { id: originalIdeaId } });
+    if (!original) throw new NotFoundException('Original idea not found');
+    if (original.founderId !== founderId) throw new ForbiddenException('Access denied');
+
+    const { selfAssessment, ...ideaData } = data;
+    return this.prisma.idea.create({
+      data: {
+        ...ideaData,
+        founderId,
+        isRevision: true,
+        revisionOf: originalIdeaId,
+        version: original.version + 1,
+        paymentStatus: 'PENDING',
+        selfAssessment: selfAssessment ? { create: selfAssessment } : undefined,
+      },
+      include: { selfAssessment: true },
+    });
+  }
+}
