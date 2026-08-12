@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
+import { ActivityModule } from './activity/activity.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { IdeasModule } from './ideas/ideas.module';
@@ -14,6 +15,7 @@ import { SurveyModule } from './survey/survey.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    ActivityModule,
     AuthModule,
     UsersModule,
     IdeasModule,

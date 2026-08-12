@@ -60,7 +60,9 @@ export default function AdminSurveysPage() {
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div className="flex-1 min-w-[240px]">
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <h3 className="text-lg font-semibold text-slate-900">{s.title}</h3>
+                  <Link href={`/admin/surveys/${s.id}`} className="text-lg font-semibold text-blue-600 hover:text-blue-700">
+                    {s.title}
+                  </Link>
                   <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_STYLE[s.status] || 'bg-slate-100 text-slate-700'}`}>
                     {s.status}
                   </span>
@@ -75,6 +77,10 @@ export default function AdminSurveysPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                <Link href={`/admin/surveys/${s.id}`}
+                  className="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-100 whitespace-nowrap">
+                  Inspect
+                </Link>
                 {s.publicId && (
                   <a href={`/survey/${s.publicId}`} target="_blank" rel="noopener noreferrer"
                     className="bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-100 whitespace-nowrap">

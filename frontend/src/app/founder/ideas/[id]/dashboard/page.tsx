@@ -129,6 +129,10 @@ export default function IdeaDashboardPage() {
     setReportError('');
     try {
       await downloadValidationReport({ idea, aggregated: a, aiSummary, marketResponseLabel, surveyAnalytics });
+      // Records the download for the admin activity feed. Deliberately not
+      // awaited or surfaced — the report already reached the user, so a failed
+      // log must not show them an error.
+      api.recordReportDownload(idea.id).catch(() => {});
     } catch (err: any) {
       setReportError(err.message || 'Could not generate the report. Please try again.');
     } finally {

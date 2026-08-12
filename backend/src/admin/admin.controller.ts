@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Delete, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Patch, Delete, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -26,13 +26,13 @@ export class AdminController {
   }
 
   @Patch('validators/:id/approve')
-  approveValidator(@Param('id') id: string) {
-    return this.adminService.approveValidator(id);
+  approveValidator(@Param('id') id: string, @Request() req) {
+    return this.adminService.approveValidator(id, req.user.userId);
   }
 
   @Patch('validators/:id/reject')
-  rejectValidator(@Param('id') id: string) {
-    return this.adminService.rejectValidator(id);
+  rejectValidator(@Param('id') id: string, @Request() req) {
+    return this.adminService.rejectValidator(id, req.user.userId);
   }
 
   @Get('ideas')
@@ -41,13 +41,13 @@ export class AdminController {
   }
 
   @Delete('ideas/:id')
-  deleteIdea(@Param('id') id: string) {
-    return this.adminService.deleteIdea(id);
+  deleteIdea(@Param('id') id: string, @Request() req) {
+    return this.adminService.deleteIdea(id, req.user.userId);
   }
 
   @Patch('users/:id/toggle-status')
-  toggleUserStatus(@Param('id') id: string) {
-    return this.adminService.toggleUserStatus(id);
+  toggleUserStatus(@Param('id') id: string, @Request() req) {
+    return this.adminService.toggleUserStatus(id, req.user.userId);
   }
 
   @Get('surveys')
@@ -56,12 +56,12 @@ export class AdminController {
   }
 
   @Patch('surveys/:id/toggle-status')
-  toggleSurveyStatus(@Param('id') id: string) {
-    return this.adminService.toggleSurveyStatus(id);
+  toggleSurveyStatus(@Param('id') id: string, @Request() req) {
+    return this.adminService.toggleSurveyStatus(id, req.user.userId);
   }
 
   @Delete('surveys/:id')
-  deleteSurvey(@Param('id') id: string) {
-    return this.adminService.deleteSurvey(id);
+  deleteSurvey(@Param('id') id: string, @Request() req) {
+    return this.adminService.deleteSurvey(id, req.user.userId);
   }
 }

@@ -61,7 +61,9 @@ export default function AdminValidatorsPage() {
           <div key={v.id} className="bg-white border border-slate-200 shadow-sm rounded-xl p-6">
             <div className="flex items-start justify-between">
               <div className="flex-1">
-                <h3 className="text-lg font-semibold text-slate-900">{v.user.name}</h3>
+                <Link href={`/admin/users/${v.user.id}`} className="text-lg font-semibold text-blue-600 hover:text-blue-700">
+                  {v.user.name}
+                </Link>
                 <p className="text-sm text-slate-500">{v.user.email}</p>
                 <div className="mt-3 grid md:grid-cols-2 gap-3 text-sm">
                   <div><span className="text-slate-500">Occupation:</span> <span className="font-medium text-slate-800">{v.occupation}</span></div>

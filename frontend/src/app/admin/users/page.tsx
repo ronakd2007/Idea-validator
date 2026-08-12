@@ -73,7 +73,9 @@ export default function AdminUsersPage() {
           <tbody>
             {filtered.map(u => (
               <tr key={u.id} className="border-b border-slate-100 hover:bg-slate-50">
-                <td className="px-6 py-4 font-medium text-slate-900">{u.name}</td>
+                <td className="px-6 py-4 font-medium">
+                  <Link href={`/admin/users/${u.id}`} className="text-blue-600 hover:text-blue-700">{u.name}</Link>
+                </td>
                 <td className="px-6 py-4 text-slate-500">{u.email}</td>
                 <td className="px-6 py-4">
                   <span className={`text-xs px-2 py-1 rounded-full font-medium ${roleColor[u.role]}`}>{u.role}</span>
@@ -85,10 +87,16 @@ export default function AdminUsersPage() {
                 </td>
                 <td className="px-6 py-4 text-slate-500">{new Date(u.createdAt).toLocaleDateString()}</td>
                 <td className="px-6 py-4">
-                  <button onClick={() => toggleStatus(u.id)} disabled={actionLoading === u.id}
-                    className={`text-xs px-3 py-1 rounded border font-medium transition disabled:opacity-50 ${u.isActive ? 'border-red-300 text-red-600 hover:bg-red-50' : 'border-emerald-300 text-emerald-600 hover:bg-emerald-50'}`}>
-                    {actionLoading === u.id ? '...' : u.isActive ? 'Deactivate' : 'Activate'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <Link href={`/admin/users/${u.id}`}
+                      className="text-xs px-3 py-1 rounded border border-slate-300 text-slate-600 font-medium hover:border-blue-400 hover:text-blue-600 transition">
+                      View
+                    </Link>
+                    <button onClick={() => toggleStatus(u.id)} disabled={actionLoading === u.id}
+                      className={`text-xs px-3 py-1 rounded border font-medium transition disabled:opacity-50 ${u.isActive ? 'border-red-300 text-red-600 hover:bg-red-50' : 'border-emerald-300 text-emerald-600 hover:bg-emerald-50'}`}>
+                      {actionLoading === u.id ? '...' : u.isActive ? 'Deactivate' : 'Activate'}
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

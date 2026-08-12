@@ -51,7 +51,9 @@ export default function AdminIdeasPage() {
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
-                  <h3 className="text-lg font-semibold text-slate-900">{idea.title}</h3>
+                  <Link href={`/admin/ideas/${idea.id}`} className="text-lg font-semibold text-blue-600 hover:text-blue-700">
+                    {idea.title}
+                  </Link>
                   {idea.isRevision && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">v{idea.version}</span>}
                 </div>
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -68,10 +70,16 @@ export default function AdminIdeasPage() {
                   <span>Submitted {new Date(idea.submittedAt).toLocaleDateString()}</span>
                 </div>
               </div>
-              <button onClick={() => deleteIdea(idea.id, idea.title)} disabled={actionLoading === idea.id}
-                className="ml-4 bg-red-50 text-red-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-100 disabled:opacity-50 whitespace-nowrap">
-                {actionLoading === idea.id ? 'Deleting...' : 'Delete'}
-              </button>
+              <div className="ml-4 flex items-center gap-2 shrink-0">
+                <Link href={`/admin/ideas/${idea.id}`}
+                  className="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-100 whitespace-nowrap">
+                  Inspect
+                </Link>
+                <button onClick={() => deleteIdea(idea.id, idea.title)} disabled={actionLoading === idea.id}
+                  className="bg-red-50 text-red-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-100 disabled:opacity-50 whitespace-nowrap">
+                  {actionLoading === idea.id ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
             </div>
           </div>
         ))}

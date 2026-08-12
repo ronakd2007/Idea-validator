@@ -1,10 +1,35 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { randomBytes, createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActivityService } from '../activity/activity.service';
 
 @Injectable()
 export class PublicSurveyService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private activity: ActivityService) {}
+
+  /**
+   * Respondent activity is recorded with NO userId and NO session token — a
+   * respondent has no account by design, and nothing here can be joined back to
+   * an individual person or to their answers. ownerUserId points at the founder
+   * so the event also shows on their profile as activity on their survey.
+   */
+  private logRespondent(
+    action: string,
+    survey: { id: string; title: string; founderId: string },
+    metadata: Record<string, any> = {}
+  ) {
+    void this.activity.log({
+      userId: null,
+      actorRole: 'RESPONDENT',
+      actorLabel: 'Anonymous respondent',
+      action,
+      targetType: 'SURVEY',
+      targetId: survey.id,
+      targetLabel: survey.title,
+      ownerUserId: survey.founderId,
+      metadata: { surveyId: survey.id, ...metadata },
+    });
+  }
 
   private async loadByPublicId(publicId: string) {
     const survey = await this.prisma.survey.findUnique({
@@ -95,17 +120,28 @@ export class PublicSurveyService {
 
     const token = randomBytes(16).toString('base64url');
     const session = await this.prisma.surveySession.create({ data: { surveyId: survey.id, token } });
+    this.logRespondent('SURVEY_OPENED', survey);
     return { sessionToken: session.token };
   }
 
   // Best-effort progress signal for Phase 3 drop-off analysis — fire-and-forget
   // from the client, never blocks or errors the respondent's experience.
   async updateProgress(publicId: string, sessionToken: string, questionIndex: number) {
-    const survey = await this.prisma.survey.findUnique({ where: { publicId }, select: { id: true } });
+    const survey = await this.prisma.survey.findUnique({
+      where: { publicId },
+      select: { id: true, title: true, founderId: true },
+    });
     if (!survey || !sessionToken) return { success: false };
     const session = await this.prisma.surveySession.findUnique({ where: { token: sessionToken } });
     if (!session || session.surveyId !== survey.id || session.completed) return { success: false };
     if (questionIndex <= session.lastQuestionIndex) return { success: true };
+
+    // Moving past the first question is what distinguishes "started" from
+    // merely opening the link. Fires at most once per session.
+    if (session.lastQuestionIndex === 0 && questionIndex > 0) {
+      this.logRespondent('SURVEY_STARTED', survey);
+    }
+
     await this.prisma.surveySession.update({
       where: { id: session.id },
       data: { lastQuestionIndex: questionIndex, lastActivityAt: new Date() },
@@ -217,6 +253,11 @@ export class PublicSurveyService {
         data: { completed: true, submittedAt: new Date(), lastActivityAt: new Date() },
       });
     });
+
+    // Logged after the transaction commits, so the feed can never show a
+    // submission that didn't actually persist. Records the count only — never
+    // the answers, the email, or anything identifying the respondent.
+    this.logRespondent('SURVEY_SUBMITTED', survey, { answerCount: (rawAnswers || []).length });
 
     return { success: true };
   }

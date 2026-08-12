@@ -1,13 +1,19 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActivityService } from '../activity/activity.service';
 
 @Injectable()
 export class IdeasService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private activity: ActivityService) {}
+
+  private async actor(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true, role: true } });
+    return { label: user?.name || 'Unknown user', role: user?.role || 'FOUNDER' };
+  }
 
   async create(founderId: string, data: any) {
     const { selfAssessment, teamMembers, ...ideaData } = data;
-    return this.prisma.idea.create({
+    const idea = await this.prisma.idea.create({
       data: {
         ...ideaData,
         teamMembers: JSON.stringify(teamMembers || []),
@@ -17,6 +23,21 @@ export class IdeasService {
       },
       include: { selfAssessment: true },
     });
+
+    const { label, role } = await this.actor(founderId);
+    void this.activity.log({
+      userId: founderId,
+      actorRole: role,
+      actorLabel: label,
+      action: 'IDEA_CREATED',
+      targetType: 'IDEA',
+      targetId: idea.id,
+      targetLabel: idea.title,
+      ownerUserId: founderId,
+      metadata: { ideaId: idea.id, industryCategory: idea.industryCategory, stage: idea.stage },
+    });
+
+    return idea;
   }
 
   async findAllForValidator() {
@@ -86,6 +107,62 @@ export class IdeasService {
     if (!idea) throw new NotFoundException('Idea not found');
     if (idea.founderId !== founderId) throw new ForbiddenException('Access denied');
 
+    const { label, role } = await this.actor(founderId);
+    void this.activity.log({
+      userId: founderId,
+      actorRole: role,
+      actorLabel: label,
+      action: 'IDEA_RESULTS_VIEWED',
+      targetType: 'IDEA',
+      targetId: idea.id,
+      targetLabel: idea.title,
+      ownerUserId: founderId,
+      metadata: { ideaId: idea.id, validationCount: idea.validations.length },
+    });
+
+    return { available: true, idea, aggregated: this.aggregateScores(idea.validations) };
+  }
+
+  /**
+   * Admin-only view of the same dashboard payload, without the founder
+   * ownership check. Reached only through an ADMIN-guarded route; deliberately
+   * does not log an IDEA_RESULTS_VIEWED activity against the founder, since
+   * the founder did not do it — the admin's own action is logged by the caller.
+   */
+  async getDashboardForAdmin(ideaId: string) {
+    const idea = await this.prisma.idea.findUnique({
+      where: { id: ideaId },
+      include: {
+        founder: { select: { id: true, name: true, email: true, createdAt: true } },
+        selfAssessment: true,
+        validations: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            validator: { select: { id: true, name: true, email: true, phone: true, validatorProfile: true } },
+            marketOpportunity: true,
+            feasibility: true,
+            founderFit: true,
+            revenuePotential: true,
+            scalability: true,
+            riskAssessment: true,
+            investorAttractiveness: true,
+            innovation: true,
+            socialImpact: true,
+            customerValidation: true,
+            sharkTank: true,
+            startupSuccess: true,
+            openFeedback: true,
+          },
+        },
+        surveys: {
+          select: { id: true, title: true, status: true, createdAt: true, _count: { select: { responses: true } } },
+          orderBy: { createdAt: 'desc' },
+        },
+        payments: { orderBy: { createdAt: 'desc' } },
+      },
+    });
+
+    if (!idea) throw new NotFoundException('Idea not found');
     return { available: true, idea, aggregated: this.aggregateScores(idea.validations) };
   }
 
@@ -214,7 +291,7 @@ export class IdeasService {
     if (original.founderId !== founderId) throw new ForbiddenException('Access denied');
 
     const { selfAssessment, teamMembers, ...ideaData } = data;
-    return this.prisma.idea.create({
+    const revision = await this.prisma.idea.create({
       data: {
         ...ideaData,
         teamMembers: JSON.stringify(teamMembers || []),
@@ -227,5 +304,49 @@ export class IdeasService {
       },
       include: { selfAssessment: true },
     });
+
+    const { label, role } = await this.actor(founderId);
+    void this.activity.log({
+      userId: founderId,
+      actorRole: role,
+      actorLabel: label,
+      action: 'IDEA_REVISED',
+      targetType: 'IDEA',
+      targetId: revision.id,
+      targetLabel: revision.title,
+      ownerUserId: founderId,
+      metadata: { ideaId: revision.id, revisionOf: originalIdeaId, version: revision.version },
+    });
+
+    return revision;
+  }
+
+  /**
+   * Recorded when the founder generates the validation PDF. The report itself
+   * is built client-side from data already on the page, so this endpoint exists
+   * only to note that it happened — it returns nothing and stores no file.
+   */
+  async recordReportDownload(ideaId: string, founderId: string) {
+    const idea = await this.prisma.idea.findUnique({
+      where: { id: ideaId },
+      select: { id: true, title: true, founderId: true },
+    });
+    if (!idea) throw new NotFoundException('Idea not found');
+    if (idea.founderId !== founderId) throw new ForbiddenException('Access denied');
+
+    const { label, role } = await this.actor(founderId);
+    void this.activity.log({
+      userId: founderId,
+      actorRole: role,
+      actorLabel: label,
+      action: 'REPORT_DOWNLOADED',
+      targetType: 'IDEA',
+      targetId: idea.id,
+      targetLabel: idea.title,
+      ownerUserId: founderId,
+      metadata: { ideaId: idea.id },
+    });
+
+    return { success: true };
   }
 }

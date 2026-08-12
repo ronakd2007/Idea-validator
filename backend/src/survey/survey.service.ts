@@ -1,12 +1,33 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActivityService } from '../activity/activity.service';
 
 const CHOICE_TYPES = ['MULTIPLE_CHOICE', 'CHECKBOXES', 'DROPDOWN', 'IMAGE_CHOICE'];
 
 @Injectable()
 export class SurveyService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private activity: ActivityService) {}
+
+  private async logSurvey(
+    action: string,
+    survey: { id: string; title: string; status?: string },
+    founderId: string,
+    metadata: Record<string, any> = {}
+  ) {
+    const user = await this.prisma.user.findUnique({ where: { id: founderId }, select: { name: true, role: true } });
+    void this.activity.log({
+      userId: founderId,
+      actorRole: user?.role || 'FOUNDER',
+      actorLabel: user?.name || 'Unknown user',
+      action,
+      targetType: 'SURVEY',
+      targetId: survey.id,
+      targetLabel: survey.title,
+      ownerUserId: founderId,
+      metadata: { surveyId: survey.id, ...(survey.status ? { status: survey.status } : {}), ...metadata },
+    });
+  }
 
   private include = {
     idea: { select: { id: true, title: true } },
@@ -26,10 +47,13 @@ export class SurveyService {
       if (idea.founderId !== founderId) throw new ForbiddenException('Access denied');
     }
 
-    return this.prisma.survey.create({
+    const survey = await this.prisma.survey.create({
       data: { ideaId: ideaId || null, founderId, title: title?.trim() || 'Untitled Survey', description: description || '' },
       include: this.include,
     });
+
+    await this.logSurvey('SURVEY_CREATED', survey, founderId, { ideaId: survey.ideaId });
+    return survey;
   }
 
   async findMine(founderId: string) {
@@ -122,13 +146,18 @@ export class SurveyService {
       }
     });
 
-    return this.findOwned(id, founderId);
+    const updated = await this.findOwned(id, founderId);
+    await this.logSurvey('SURVEY_UPDATED', updated, founderId, { questionCount: updated.questions.length });
+    return updated;
   }
 
   async remove(id: string, founderId: string) {
     const survey = await this.findOwned(id, founderId);
     if (survey.status !== 'DRAFT') throw new ForbiddenException('Only draft surveys can be deleted');
     await this.prisma.survey.delete({ where: { id } });
+    // targetId/targetLabel are soft references, so the record of the deletion
+    // survives the row it points at.
+    await this.logSurvey('SURVEY_DELETED', survey, founderId);
     return { success: true };
   }
 
@@ -178,21 +207,30 @@ export class SurveyService {
 
     const publicId = survey.publicId || (await this.uniquePublicId());
     await this.prisma.survey.update({ where: { id }, data: { status: 'LIVE', publicId } });
-    return this.findOwned(id, founderId);
+
+    const published = await this.findOwned(id, founderId);
+    await this.logSurvey('SURVEY_PUBLISHED', published, founderId, { questionCount: published.questions.length });
+    return published;
   }
 
   async close(id: string, founderId: string) {
     const survey = await this.findOwned(id, founderId);
     if (survey.status !== 'LIVE') throw new ForbiddenException('Only live surveys can be closed');
     await this.prisma.survey.update({ where: { id }, data: { status: 'CLOSED' } });
-    return this.findOwned(id, founderId);
+
+    const closed = await this.findOwned(id, founderId);
+    await this.logSurvey('SURVEY_CLOSED', closed, founderId);
+    return closed;
   }
 
   async reopen(id: string, founderId: string) {
     const survey = await this.findOwned(id, founderId);
     if (survey.status !== 'CLOSED') throw new ForbiddenException('Only closed surveys can be reopened');
     await this.prisma.survey.update({ where: { id }, data: { status: 'LIVE' } });
-    return this.findOwned(id, founderId);
+
+    const reopened = await this.findOwned(id, founderId);
+    await this.logSurvey('SURVEY_REOPENED', reopened, founderId);
+    return reopened;
   }
 
   // A LIVE/CLOSED survey's questions are locked (see update() above) to protect
@@ -265,7 +303,12 @@ export class SurveyService {
       return newSurvey;
     });
 
-    return this.findOwned(created.id, founderId);
+    const version = await this.findOwned(created.id, founderId);
+    await this.logSurvey('SURVEY_CREATED', version, founderId, {
+      versionNumber: version.versionNumber,
+      versionOf: id,
+    });
+    return version;
   }
 
   async getVersions(id: string, founderId: string) {

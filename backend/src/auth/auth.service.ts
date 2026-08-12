@@ -3,12 +3,28 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { OAuth2Client } from 'google-auth-library';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActivityService } from '../activity/activity.service';
 
 @Injectable()
 export class AuthService {
   private googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-  constructor(private prisma: PrismaService, private jwt: JwtService) {}
+  constructor(private prisma: PrismaService, private jwt: JwtService, private activity: ActivityService) {}
+
+  // Fire-and-forget: ActivityService.log never throws, so a failed log can
+  // never turn a successful signup or login into an error for the user.
+  private logAccount(user: { id: string; name: string; role: string }, action: 'ACCOUNT_SIGNUP' | 'ACCOUNT_LOGIN', method: string) {
+    void this.activity.log({
+      userId: user.id,
+      actorRole: user.role,
+      actorLabel: user.name,
+      action,
+      targetType: 'USER',
+      targetId: user.id,
+      targetLabel: user.name,
+      metadata: { method },
+    });
+  }
 
   async sendOtp(phone: string): Promise<{ otp: string }> {
     // Invalidate previous unused OTPs for this phone
@@ -45,6 +61,7 @@ export class AuthService {
     const user = await this.prisma.user.create({
       data: { name: data.name, email: data.email, password: hash, role: 'FOUNDER', phone: data.phone, phoneVerified: true },
     });
+    this.logAccount(user, 'ACCOUNT_SIGNUP', 'PASSWORD');
     return this.signToken(user);
   }
 
@@ -88,6 +105,7 @@ export class AuthService {
         },
       },
     });
+    this.logAccount(user, 'ACCOUNT_SIGNUP', 'PASSWORD');
     return {
       message: 'Registration successful. Your profile is pending admin approval.',
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
@@ -113,6 +131,7 @@ export class AuthService {
       throw new UnauthorizedException('Your validator profile is pending admin approval');
     }
 
+    this.logAccount(user, 'ACCOUNT_LOGIN', 'PASSWORD');
     return this.signToken(user);
   }
 
@@ -154,6 +173,7 @@ export class AuthService {
       throw new UnauthorizedException('Your validator profile is pending admin approval');
     }
 
+    this.logAccount(user, 'ACCOUNT_LOGIN', 'GOOGLE');
     return this.signToken(user);
   }
 
@@ -173,6 +193,7 @@ export class AuthService {
       }
     }
 
+    const isNewAccount = !user;
     if (!user) {
       user = await this.prisma.user.create({
         data: { name, email, googleId, role: 'FOUNDER', phoneVerified: false },
@@ -180,6 +201,10 @@ export class AuthService {
     }
 
     if (!user.isActive) throw new UnauthorizedException('Account is deactivated');
+
+    // This endpoint doubles as sign-in for people who already registered, so
+    // the action recorded depends on whether an account was actually created.
+    this.logAccount(user, isNewAccount ? 'ACCOUNT_SIGNUP' : 'ACCOUNT_LOGIN', 'GOOGLE');
     return this.signToken(user);
   }
 

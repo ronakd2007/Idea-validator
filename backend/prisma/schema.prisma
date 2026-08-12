@@ -25,6 +25,7 @@ model User {
   validations      ValidationResponse[]
   payments         Payment[]
   surveys          Survey[]
+  activities       Activity[]
 }
 
 model ValidatorProfile {
@@ -401,6 +402,44 @@ model SurveyIncentive {
   updatedAt     DateTime  @updatedAt
 
   entries IncentiveEntry[]
+}
+
+// Admin-facing record of meaningful actions performed *inside* the platform.
+// Deliberately narrow: one row per meaningful action (see ACTIONS in
+// activity.service.ts), never one per API request. Stores no IP address, no
+// user-agent, no page views — nothing about the person outside this app.
+model Activity {
+  id     String  @id @default(cuid())
+  userId String? // null for anonymous survey respondents, who have no account by design
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // Snapshot of who acted, so the feed still reads correctly if the account is
+  // later removed — and so the feed never needs a join to render a row.
+  actorRole  String // FOUNDER | VALIDATOR | RESPONDENT | ADMIN
+  actorLabel String
+
+  action   String // see ACTIONS in activity.service.ts
+  category String // ACCOUNT | IDEAS | SURVEYS | RESPONSES | VALIDATIONS | REPORTS | ADMIN
+
+  targetType  String? // IDEA | SURVEY | VALIDATION | USER
+  targetId    String? // soft-reference, mirrors Idea.revisionOf / Survey.rootSurveyId — no FK, so
+  targetLabel String? // deleting a target never erases the record that it once happened
+
+  // The founder who owns the target, if any. Lets a respondent's submission
+  // surface on that founder's profile as "received a response" from the same
+  // single row, instead of writing a second duplicate row.
+  ownerUserId String?
+
+  // JSON, platform facts only: ids, counts, statuses. Never personal data.
+  metadata String @default("{}")
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([category, createdAt])
+  @@index([ownerUserId, createdAt])
+  @@index([targetType, targetId])
 }
 
 // Deliberately has NO relation to SurveyResponse or SurveySession — this is the

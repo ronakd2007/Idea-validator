@@ -26,7 +26,13 @@ const NUMERIC_TYPES = ['RATING', 'LINEAR_SCALE'];
 export class SurveyAnalyticsService {
   constructor(private prisma: PrismaService) {}
 
-  private async loadFullSurvey(id: string, founderId: string) {
+  /**
+   * `ownerId` is the founder the survey must belong to. Passing exactly `null`
+   * means an admin context where authorization has already been enforced by the
+   * ADMIN role guard on the route — the check is skipped only for that exact
+   * value, so a missing/undefined id still fails closed.
+   */
+  private async loadFullSurvey(id: string, ownerId: string | null) {
     const survey = await this.prisma.survey.findUnique({
       where: { id },
       include: {
@@ -37,7 +43,7 @@ export class SurveyAnalyticsService {
       },
     });
     if (!survey) throw new NotFoundException('Survey not found');
-    if (survey.founderId !== founderId) throw new ForbiddenException('Access denied');
+    if (ownerId !== null && survey.founderId !== ownerId) throw new ForbiddenException('Access denied');
     return survey;
   }
 
@@ -534,8 +540,8 @@ export class SurveyAnalyticsService {
 
   // ---------- public entry points ----------
 
-  async getAnalytics(id: string, founderId: string, opts: { range?: string; outcomeQuestionId?: string; segmentQuestionId?: string }) {
-    const survey = await this.loadFullSurvey(id, founderId);
+  async getAnalytics(id: string, ownerId: string | null, opts: { range?: string; outcomeQuestionId?: string; segmentQuestionId?: string }) {
+    const survey = await this.loadFullSurvey(id, ownerId);
     const { questions, sessions, responses } = survey;
 
     const trend = this.computeTrend(responses, opts.range);
@@ -604,8 +610,8 @@ export class SurveyAnalyticsService {
     };
   }
 
-  async getResponsesPage(id: string, founderId: string, opts: { page?: number; pageSize?: number; quality?: string; search?: string; questionId?: string }) {
-    const survey = await this.loadFullSurvey(id, founderId);
+  async getResponsesPage(id: string, ownerId: string | null, opts: { page?: number; pageSize?: number; quality?: string; search?: string; questionId?: string }) {
+    const survey = await this.loadFullSurvey(id, ownerId);
     const medianDuration = this.median(
       survey.responses.filter((r) => r.session?.completed).map((r) => this.durationSeconds(r.session)).filter((d): d is number => d != null)
     );
@@ -645,8 +651,8 @@ export class SurveyAnalyticsService {
     return { responses: pageRows, total, page, pageSize };
   }
 
-  async exportCsv(id: string, founderId: string): Promise<string> {
-    const survey = await this.loadFullSurvey(id, founderId);
+  async exportCsv(id: string, ownerId: string | null): Promise<string> {
+    const survey = await this.loadFullSurvey(id, ownerId);
     const medianDuration = this.median(
       survey.responses.filter((r) => r.session?.completed).map((r) => this.durationSeconds(r.session)).filter((d): d is number => d != null)
     );

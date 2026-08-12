@@ -37,6 +37,9 @@ export default function AdminDashboardPage() {
           <p className="text-slate-500 mt-1">Platform overview and management</p>
         </div>
         <div className="flex gap-3">
+          <Link href="/admin/activity" className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
+            View Activity
+          </Link>
           <Link href="/admin/validators" className="border border-amber-300 text-amber-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-50">
             Pending Approvals {stats?.pendingApprovals > 0 && <span className="ml-1 bg-amber-500 text-white px-1.5 py-0.5 rounded-full text-xs">{stats.pendingApprovals}</span>}
           </Link>
@@ -59,6 +62,7 @@ export default function AdminDashboardPage() {
 
           <div className="grid md:grid-cols-3 gap-4">
             {[
+              { href: '/admin/activity', label: 'Activity', desc: 'See what users are doing on the platform', icon: '📊' },
               { href: '/admin/validators', label: 'Manage Validators', desc: 'Approve or reject validator applications', icon: '✓' },
               { href: '/admin/users', label: 'Manage Users', desc: 'View and manage all platform users', icon: '👥' },
               { href: '/admin/ideas', label: 'Manage Ideas', desc: 'Review and moderate submitted ideas', icon: '💡' },

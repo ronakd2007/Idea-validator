@@ -38,6 +38,8 @@ export const api = {
   getIdea: (id: string) => request(`/ideas/${id}`),
   getIdeaDashboard: (id: string) => request(`/ideas/${id}/dashboard`),
   reviseIdea: (id: string, body: any) => request(`/ideas/${id}/revise`, { method: 'POST', body: JSON.stringify(body) }),
+  // Records that the founder generated the PDF; the file itself is built in the browser.
+  recordReportDownload: (id: string) => request(`/ideas/${id}/report-downloaded`, { method: 'POST' }),
 
   // Validation
   submitValidation: (ideaId: string, body: any) => request(`/validation/${ideaId}`, { method: 'POST', body: JSON.stringify(body) }),
@@ -116,4 +118,39 @@ export const api = {
   getAdminSurveys: () => request('/admin/surveys'),
   adminToggleSurveyStatus: (id: string) => request(`/admin/surveys/${id}/toggle-status`, { method: 'PATCH' }),
   adminDeleteSurvey: (id: string) => request(`/admin/surveys/${id}`, { method: 'DELETE' }),
+
+  // Admin — Activity feed
+  getAdminActivity: (opts: { search?: string; role?: string; category?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.search) params.set('search', opts.search);
+    if (opts.role && opts.role !== 'ALL') params.set('role', opts.role);
+    if (opts.category && opts.category !== 'ALL') params.set('category', opts.category);
+    if (opts.from) params.set('from', opts.from);
+    if (opts.to) params.set('to', opts.to);
+    if (opts.page) params.set('page', String(opts.page));
+    if (opts.pageSize) params.set('pageSize', String(opts.pageSize));
+    const qs = params.toString();
+    return request(`/admin/activity${qs ? `?${qs}` : ''}`);
+  },
+  getAdminActivitySummary: () => request('/admin/activity/summary'),
+  getAdminActivityDetail: (id: string) => request(`/admin/activity/${id}`),
+
+  // Admin — data inspection
+  getAdminUserOverview: (id: string) => request(`/admin/users/${id}/overview`),
+  getAdminUserActivity: (id: string, limit?: number) =>
+    request(`/admin/users/${id}/activity${limit ? `?limit=${limit}` : ''}`),
+  getAdminIdeaDashboard: (id: string) => request(`/admin/ideas/${id}/dashboard`),
+  getAdminIdeaActivity: (id: string) => request(`/admin/ideas/${id}/activity`),
+  getAdminSurveyDetail: (id: string) => request(`/admin/surveys/${id}/detail`),
+  getAdminSurveyResponses: (id: string, opts: { page?: number; pageSize?: number; quality?: string; search?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.page) params.set('page', String(opts.page));
+    if (opts.pageSize) params.set('pageSize', String(opts.pageSize));
+    if (opts.quality) params.set('quality', opts.quality);
+    if (opts.search) params.set('search', opts.search);
+    const qs = params.toString();
+    return request(`/admin/surveys/${id}/responses${qs ? `?${qs}` : ''}`);
+  },
+  getAdminSurveyAnalytics: (id: string) => request(`/admin/surveys/${id}/analytics`),
+  getAdminSurveyActivity: (id: string) => request(`/admin/surveys/${id}/activity`),
 };

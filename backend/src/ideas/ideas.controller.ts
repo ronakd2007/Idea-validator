@@ -43,4 +43,12 @@ export class IdeasController {
   createRevision(@Param('id') id: string, @Request() req, @Body() body: any) {
     return this.ideasService.createRevision(id, req.user.userId, body);
   }
+
+  // The validation PDF is generated in the browser from data already loaded on
+  // the dashboard; this only records that the founder generated it.
+  @Post(':id/report-downloaded')
+  @Roles('FOUNDER')
+  recordReportDownload(@Param('id') id: string, @Request() req) {
+    return this.ideasService.recordReportDownload(id, req.user.userId);
+  }
 }

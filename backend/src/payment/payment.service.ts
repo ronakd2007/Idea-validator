@@ -2,13 +2,36 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActivityService } from '../activity/activity.service';
 
 @Injectable()
 export class PaymentService {
   private fee: number;
 
-  constructor(private config: ConfigService, private prisma: PrismaService) {
+  constructor(private config: ConfigService, private prisma: PrismaService, private activity: ActivityService) {
     this.fee = Number(config.get('IDEA_SUBMISSION_FEE', 999));
+  }
+
+  // Payment completing is the moment an idea actually goes live for validators,
+  // so that is what gets recorded as "submitted".
+  private async logIdeaSubmitted(ideaId: string) {
+    const idea = await this.prisma.idea.findUnique({
+      where: { id: ideaId },
+      select: { id: true, title: true, founderId: true, version: true, founder: { select: { name: true, role: true } } },
+    });
+    if (!idea) return;
+
+    void this.activity.log({
+      userId: idea.founderId,
+      actorRole: idea.founder?.role || 'FOUNDER',
+      actorLabel: idea.founder?.name || 'Unknown user',
+      action: 'IDEA_SUBMITTED',
+      targetType: 'IDEA',
+      targetId: idea.id,
+      targetLabel: idea.title,
+      ownerUserId: idea.founderId,
+      metadata: { ideaId: idea.id, version: idea.version },
+    });
   }
 
   getConfig() {
@@ -42,6 +65,8 @@ export class PaymentService {
       where: { id: ideaId },
       data: { paymentStatus: 'COMPLETED' },
     });
+
+    await this.logIdeaSubmitted(ideaId);
 
     return { success: true, amount, message: 'Payment completed (test mode)' };
   }
@@ -77,6 +102,8 @@ export class PaymentService {
       where: { id: body.ideaId },
       data: { paymentStatus: 'COMPLETED' },
     });
+
+    await this.logIdeaSubmitted(body.ideaId);
 
     return { success: true };
   }

@@ -5,33 +5,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { getStoredUser } from '@/lib/auth';
 import { surveyFromServer, SurveyDraft, QuestionDraft } from '@/lib/surveyTypes';
-
-function formatAnswer(question: QuestionDraft, rawValue: string) {
-  let value: any;
-  try {
-    value = JSON.parse(rawValue);
-  } catch {
-    return rawValue;
-  }
-
-  if (question.type === 'MULTIPLE_CHOICE' || question.type === 'DROPDOWN') {
-    return question.options.find((o) => o.id === value)?.label || String(value);
-  }
-  if (question.type === 'CHECKBOXES') {
-    const ids = Array.isArray(value) ? value : [];
-    const labels = ids.map((id: string) => question.options.find((o) => o.id === id)?.label || id);
-    return labels.length ? labels.join(', ') : '—';
-  }
-  if (typeof value === 'number') return String(value);
-  return value || '—';
-}
-
-function formatDuration(seconds: number | null) {
-  if (seconds == null) return '—';
-  const m = Math.floor(seconds / 60);
-  const s = Math.round(seconds % 60);
-  return m > 0 ? `${m}m ${s}s` : `${s}s`;
-}
+import { formatAnswer, formatDuration } from '@/lib/surveyAnswers';
 
 const QUALITY_TABS = [
   { value: 'ALL', label: 'All' },
