@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -10,7 +10,17 @@ import QuestionPreview from '@/components/survey/QuestionPreview';
 
 const BLANK_INCENTIVE: IncentiveDraft = { title: '', description: '', numberOfWinners: 1, eligibility: '', closingDate: null, collectContact: true };
 
+// useSearchParams() requires a Suspense boundary for static prerendering —
+// dev mode never enforces this, only a real `next build` does.
 export default function SurveyBuilderPage() {
+  return (
+    <Suspense fallback={null}>
+      <SurveyBuilderInner />
+    </Suspense>
+  );
+}
+
+function SurveyBuilderInner() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();

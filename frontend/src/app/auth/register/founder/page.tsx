@@ -1,12 +1,22 @@
 'use client';
-import { useCallback, useState } from 'react';
+import { Suspense, useCallback, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { storeAuth } from '@/lib/auth';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
 
+// useSearchParams() requires a Suspense boundary for static prerendering —
+// dev mode never enforces this, only a real `next build` does.
 export default function RegisterFounderPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterFounderForm />
+    </Suspense>
+  );
+}
+
+function RegisterFounderForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const googleEmailHint = searchParams.get('googleEmail');

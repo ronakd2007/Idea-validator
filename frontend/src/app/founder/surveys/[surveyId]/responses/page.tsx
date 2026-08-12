@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -52,7 +52,17 @@ const QUALITY_LABEL: Record<string, string> = {
   POTENTIALLY_LOW: 'LOW',
 };
 
+// useSearchParams() requires a Suspense boundary for static prerendering —
+// dev mode never enforces this, only a real `next build` does.
 export default function SurveyResponsesPage() {
+  return (
+    <Suspense fallback={null}>
+      <SurveyResponsesInner />
+    </Suspense>
+  );
+}
+
+function SurveyResponsesInner() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
