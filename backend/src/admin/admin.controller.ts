@@ -49,4 +49,19 @@ export class AdminController {
   toggleUserStatus(@Param('id') id: string) {
     return this.adminService.toggleUserStatus(id);
   }
+
+  @Get('surveys')
+  getSurveys() {
+    return this.adminService.getSurveys();
+  }
+
+  @Patch('surveys/:id/toggle-status')
+  toggleSurveyStatus(@Param('id') id: string) {
+    return this.adminService.toggleSurveyStatus(id);
+  }
+
+  @Delete('surveys/:id')
+  deleteSurvey(@Param('id') id: string) {
+    return this.adminService.deleteSurvey(id);
+  }
 }

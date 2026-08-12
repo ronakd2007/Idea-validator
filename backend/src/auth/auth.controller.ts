@@ -40,6 +40,16 @@ export class AuthController {
     return this.authService.login(body.email, body.password);
   }
 
+  @Post('google')
+  loginWithGoogle(@Body() body: { idToken: string }) {
+    return this.authService.loginWithGoogle(body.idToken);
+  }
+
+  @Post('google/register-founder')
+  registerFounderWithGoogle(@Body() body: { idToken: string }) {
+    return this.authService.registerFounderWithGoogle(body.idToken);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('profile')
   getProfile(@Request() req) {

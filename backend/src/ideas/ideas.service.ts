@@ -6,10 +6,11 @@ export class IdeasService {
   constructor(private prisma: PrismaService) {}
 
   async create(founderId: string, data: any) {
-    const { selfAssessment, ...ideaData } = data;
+    const { selfAssessment, teamMembers, ...ideaData } = data;
     return this.prisma.idea.create({
       data: {
         ...ideaData,
+        teamMembers: JSON.stringify(teamMembers || []),
         founderId,
         paymentStatus: 'PENDING',
         selfAssessment: selfAssessment ? { create: selfAssessment } : undefined,
@@ -59,10 +60,11 @@ export class IdeasService {
     const idea = await this.prisma.idea.findUnique({
       where: { id: ideaId },
       include: {
+        founder: { select: { id: true, name: true } },
         selfAssessment: true,
         validations: {
           include: {
-            validator: { select: { id: true, name: true, email: true, validatorProfile: true } },
+            validator: { select: { id: true, name: true, email: true, phone: true, validatorProfile: true } },
             marketOpportunity: true,
             feasibility: true,
             founderFit: true,
@@ -144,16 +146,19 @@ export class IdeasService {
       });
     });
 
-    const openFeedbacks = validations.filter(v => v.openFeedback).map(v => {
-      const prefs = JSON.parse(v.validator.validatorProfile?.contactPreferences || '[]');
-      const sharesContact = Array.isArray(prefs) ? prefs.length > 0 : false;
-      return {
-        strength: v.openFeedback.biggestStrength,
-        weakness: v.openFeedback.biggestWeakness,
-        improvement: v.openFeedback.suggestedImprovement,
-        validatorName: 'Anonymous',
-      };
-    });
+    // A validator's contact details are shared with the founder the moment they
+    // submit a validation — not gated behind their contactPreferences opt-in,
+    // which only governs the separate "open to further contact" signal below.
+    const openFeedbacks = validations.filter(v => v.openFeedback).map(v => ({
+      strength: v.openFeedback.biggestStrength,
+      weakness: v.openFeedback.biggestWeakness,
+      improvement: v.openFeedback.suggestedImprovement,
+      validatorName: v.validator.name,
+      validatorEmail: v.validator.email,
+      validatorPhone: v.validator.phone,
+      validatorLinkedinUrl: v.validator.validatorProfile?.linkedinUrl || null,
+      validatorOccupation: v.validator.validatorProfile?.occupation || null,
+    }));
 
     const interestedContacts = validations
       .filter(v => {
@@ -208,10 +213,11 @@ export class IdeasService {
     if (!original) throw new NotFoundException('Original idea not found');
     if (original.founderId !== founderId) throw new ForbiddenException('Access denied');
 
-    const { selfAssessment, ...ideaData } = data;
+    const { selfAssessment, teamMembers, ...ideaData } = data;
     return this.prisma.idea.create({
       data: {
         ...ideaData,
+        teamMembers: JSON.stringify(teamMembers || []),
         founderId,
         isRevision: true,
         revisionOf: originalIdeaId,

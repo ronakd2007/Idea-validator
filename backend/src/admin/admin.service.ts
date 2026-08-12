@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -69,11 +69,43 @@ export class AdminService {
     return rest;
   }
 
+  async getSurveys() {
+    return this.prisma.survey.findMany({
+      include: {
+        founder: { select: { id: true, name: true, email: true } },
+        idea: { select: { id: true, title: true } },
+        _count: { select: { questions: true, responses: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  // Moderation override — live surveys can be pulled offline and closed ones
+  // brought back, regardless of which founder owns them.
+  async toggleSurveyStatus(surveyId: string) {
+    const survey = await this.prisma.survey.findUnique({ where: { id: surveyId } });
+    if (!survey) throw new NotFoundException('Survey not found');
+    if (survey.status !== 'LIVE' && survey.status !== 'CLOSED') {
+      throw new ForbiddenException('Only live or closed surveys can be toggled');
+    }
+    return this.prisma.survey.update({
+      where: { id: surveyId },
+      data: { status: survey.status === 'LIVE' ? 'CLOSED' : 'LIVE' },
+    });
+  }
+
+  async deleteSurvey(surveyId: string) {
+    const survey = await this.prisma.survey.findUnique({ where: { id: surveyId } });
+    if (!survey) throw new NotFoundException('Survey not found');
+    await this.prisma.survey.delete({ where: { id: surveyId } });
+    return { success: true };
+  }
+
   async getAnalytics() {
     const [
       totalUsers, totalFounders, totalValidators,
       totalIdeas, activeIdeas, totalValidations,
-      pendingApprovals, revenueData,
+      pendingApprovals, revenueData, totalSurveys, liveSurveys,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.user.count({ where: { role: 'FOUNDER' } }),
@@ -83,12 +115,15 @@ export class AdminService {
       this.prisma.validationResponse.count(),
       this.prisma.validatorProfile.count({ where: { isApproved: false } }),
       this.prisma.payment.aggregate({ where: { status: 'COMPLETED' }, _sum: { amount: true } }),
+      this.prisma.survey.count(),
+      this.prisma.survey.count({ where: { status: 'LIVE' } }),
     ]);
 
     return {
       totalUsers, totalFounders, totalValidators,
       totalIdeas, activeIdeas, totalValidations,
       pendingApprovals, totalRevenue: revenueData._sum.amount || 0,
+      totalSurveys, liveSurveys,
     };
   }
 }

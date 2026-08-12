@@ -11,7 +11,8 @@ model User {
   id            String   @id @default(cuid())
   name          String
   email         String   @unique
-  password      String
+  password      String? // null for Google-only accounts — no local password ever set
+  googleId      String?  @unique
   role          String   // FOUNDER | VALIDATOR | ADMIN
   phone         String?
   phoneVerified Boolean  @default(false)
@@ -23,6 +24,7 @@ model User {
   ideas            Idea[]
   validations      ValidationResponse[]
   payments         Payment[]
+  surveys          Survey[]
 }
 
 model ValidatorProfile {
@@ -45,6 +47,8 @@ model Idea {
   founderId           String
   founder             User     @relation(fields: [founderId], references: [id])
   title               String
+  videoUrl            String   @default("")
+  teamMembers         String   @default("[]") // JSON array of { name, linkedinUrl }
   industryCategory    String
   problemStatement    String
   solutionDescription String
@@ -63,6 +67,7 @@ model Idea {
   selfAssessment FounderFitSelfAssessment?
   validations    ValidationResponse[]
   payments       Payment[]
+  surveys        Survey[]
 }
 
 model FounderFitSelfAssessment {
@@ -272,4 +277,140 @@ model Payment {
   status           String   @default("PENDING")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+// Mass Survey — Phase 1 (builder/draft) + Phase 2 (publish/respond).
+// status: DRAFT | LIVE | CLOSED (ARCHIVED reserved for a later phase, no migration needed — plain string).
+model Survey {
+  id            String    @id @default(cuid())
+  ideaId        String? // optional — a survey does not require an Idea to exist; can be created standalone
+  idea          Idea?     @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  founderId     String
+  founder       User      @relation(fields: [founderId], references: [id])
+  title         String
+  description   String    @default("")
+  status        String    @default("DRAFT")
+  publicId      String?   @unique // set on publish; non-guessable, safe to share, never the internal cuid
+  responseLimit Int?
+  collectEmail  Boolean   @default(false) // optional self-reported email field on the public form — not a verified/authenticated identity
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Phase 4 — versioning. rootSurveyId is a soft-reference (mirrors Idea.revisionOf,
+  // no FK) grouping every version of "the same" survey; null means this row is v1/root.
+  rootSurveyId  String?
+  versionNumber Int     @default(1)
+
+  questions SurveyQuestion[]
+  sessions  SurveySession[]
+  responses SurveyResponse[]
+  incentive SurveyIncentive?
+}
+
+model SurveyQuestion {
+  id           String   @id @default(cuid())
+  surveyId     String
+  survey       Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  type         String   // SHORT_ANSWER | PARAGRAPH | MULTIPLE_CHOICE | CHECKBOXES | DROPDOWN | YES_NO | RATING | LINEAR_SCALE | IMAGE_CHOICE
+  questionText String
+  description  String   @default("")
+  required     Boolean  @default(false)
+  order        Int
+  settings     String   @default("{}") // JSON: rating/linear-scale config ({ max } or { min, max, minLabel, maxLabel })
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Phase 3 — analytics-only settings, never shown to respondents as labels.
+  isControlQuestion         Boolean @default(false)
+  consistencyPairQuestionId String? // soft-reference to another SurveyQuestion.id in the same survey — mirrors the Idea.revisionOf convention (no FK)
+  abGroupKey                String? // questions sharing a key are variants of "the same" question; respondents see exactly one
+  abVariant                 String? // 'A' | 'B'
+
+  // Phase 4 — optional media stimulus shown above the question (any type can carry
+  // one, e.g. a video before a RATING question). Pasted trusted URL, mirrors
+  // Idea.videoUrl — no upload/storage infrastructure exists in this app.
+  mediaUrl  String?
+  mediaType String? // 'IMAGE' | 'VIDEO'
+
+  options SurveyQuestionOption[]
+  answers SurveyAnswer[]
+}
+
+model SurveyQuestionOption {
+  id         String         @id @default(cuid())
+  questionId String
+  question   SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  label      String
+  order      Int
+  imageUrl   String? // Phase 4 — for IMAGE_CHOICE options (logo/design/packaging comparisons)
+}
+
+// Created when a respondent opens the public link — exists independently of
+// whether they ever submit, so Phase 3 can compute drop-off from session vs response counts.
+model SurveySession {
+  id             String    @id @default(cuid())
+  surveyId       String
+  survey         Survey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  token             String    @unique // opaque, held client-side; also the duplicate-submission guard
+  startedAt         DateTime  @default(now())
+  lastActivityAt    DateTime  @default(now())
+  lastQuestionIndex Int       @default(0) // highest question index reached — the basis for Phase 3 drop-off analysis
+  submittedAt       DateTime?
+  completed         Boolean   @default(false)
+
+  response SurveyResponse?
+}
+
+model SurveyResponse {
+  id              String        @id @default(cuid())
+  surveyId        String
+  survey          Survey        @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  sessionId       String        @unique
+  session         SurveySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  respondentEmail String? // only populated if the founder enabled "collect email" — no verified/authenticated identity in Phase 2
+  submittedAt     DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+
+  answers SurveyAnswer[]
+}
+
+model SurveyAnswer {
+  id         String         @id @default(cuid())
+  responseId String
+  response   SurveyResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  questionId String
+  question   SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  value      String // JSON-encoded: string | string[] | number depending on question type
+
+  @@unique([responseId, questionId])
+}
+
+// Phase 4 — optional, simple giveaway config. One per survey (founder can offer
+// no incentive at all, the default/common case).
+model SurveyIncentive {
+  id            String    @id @default(cuid())
+  surveyId      String    @unique
+  survey        Survey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  title         String
+  description   String    @default("")
+  numberOfWinners Int     @default(1)
+  eligibility   String    @default("")
+  closingDate   DateTime?
+  collectContact Boolean  @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  entries IncentiveEntry[]
+}
+
+// Deliberately has NO relation to SurveyResponse or SurveySession — this is the
+// actual privacy guarantee for anonymous surveys, not just a policy promise.
+// A giveaway entry can never be joined back to a specific set of survey answers.
+model IncentiveEntry {
+  id          String          @id @default(cuid())
+  incentiveId String
+  incentive   SurveyIncentive @relation(fields: [incentiveId], references: [id], onDelete: Cascade)
+  name        String
+  contact     String // email or phone, whatever the respondent chose to give
+  createdAt   DateTime        @default(now())
 }

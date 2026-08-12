@@ -1,0 +1,304 @@
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { randomBytes } from 'crypto';
+import { PrismaService } from '../prisma/prisma.service';
+
+const CHOICE_TYPES = ['MULTIPLE_CHOICE', 'CHECKBOXES', 'DROPDOWN', 'IMAGE_CHOICE'];
+
+@Injectable()
+export class SurveyService {
+  constructor(private prisma: PrismaService) {}
+
+  private include = {
+    idea: { select: { id: true, title: true } },
+    questions: {
+      include: { options: { orderBy: { order: 'asc' as const } } },
+      orderBy: { order: 'asc' as const },
+    },
+    incentive: true,
+  };
+
+  // ideaId is optional — a survey can be created and run entirely on its own,
+  // with no Idea submission required. It can still be attached to one when provided.
+  async create(founderId: string, ideaId: string | undefined, title: string, description: string) {
+    if (ideaId) {
+      const idea = await this.prisma.idea.findUnique({ where: { id: ideaId } });
+      if (!idea) throw new NotFoundException('Idea not found');
+      if (idea.founderId !== founderId) throw new ForbiddenException('Access denied');
+    }
+
+    return this.prisma.survey.create({
+      data: { ideaId: ideaId || null, founderId, title: title?.trim() || 'Untitled Survey', description: description || '' },
+      include: this.include,
+    });
+  }
+
+  async findMine(founderId: string) {
+    return this.prisma.survey.findMany({
+      where: { founderId },
+      include: {
+        idea: { select: { id: true, title: true } },
+        _count: { select: { questions: true, responses: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  private async findOwned(id: string, founderId: string) {
+    const survey = await this.prisma.survey.findUnique({ where: { id }, include: this.include });
+    if (!survey) throw new NotFoundException('Survey not found');
+    if (survey.founderId !== founderId) throw new ForbiddenException('Access denied');
+    return survey;
+  }
+
+  async findOne(id: string, founderId: string) {
+    return this.findOwned(id, founderId);
+  }
+
+  async update(id: string, founderId: string, data: any) {
+    const existing = await this.findOwned(id, founderId);
+    if (existing.status !== 'DRAFT') throw new ForbiddenException('Cannot edit a survey that is not a draft');
+
+    const { title, description, questions, responseLimit, collectEmail } = data;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.survey.update({
+        where: { id },
+        data: {
+          ...(title !== undefined ? { title } : {}),
+          ...(description !== undefined ? { description } : {}),
+          ...(responseLimit !== undefined ? { responseLimit: responseLimit === null || responseLimit === '' ? null : Number(responseLimit) } : {}),
+          ...(collectEmail !== undefined ? { collectEmail: !!collectEmail } : {}),
+        },
+      });
+
+      // Draft-only builder, no responses reference question ids yet — a full
+      // replace keeps "Save Draft" atomic and avoids a much more complex diff.
+      await tx.surveyQuestion.deleteMany({ where: { surveyId: id } });
+
+      const incoming = questions || [];
+      // consistencyPairQuestionId arrives as an id from the *client's* current
+      // state, which goes stale the instant we recreate rows below — resolve
+      // pairings by array position instead, then patch the reference in afterward.
+      const idToIndex = new Map<string, number>();
+      incoming.forEach((q: any, i: number) => { if (q.id) idToIndex.set(q.id, i); });
+
+      const createdIds: string[] = [];
+      for (let i = 0; i < incoming.length; i++) {
+        const q = incoming[i];
+        const created = await tx.surveyQuestion.create({
+          data: {
+            surveyId: id,
+            type: q.type,
+            questionText: q.questionText || '',
+            description: q.description || '',
+            required: !!q.required,
+            order: i,
+            settings: JSON.stringify(q.settings || {}),
+            isControlQuestion: !!q.isControlQuestion,
+            abGroupKey: q.abGroupKey || null,
+            abVariant: q.abVariant || null,
+            mediaUrl: q.mediaUrl || null,
+            mediaType: q.mediaUrl ? q.mediaType || null : null,
+            options: {
+              create: (q.options || []).map((opt: any, oi: number) => ({
+                label: opt.label || '',
+                order: oi,
+                imageUrl: opt.imageUrl || null,
+              })),
+            },
+          },
+        });
+        createdIds.push(created.id);
+      }
+
+      for (let i = 0; i < incoming.length; i++) {
+        const pairId = incoming[i].consistencyPairQuestionId;
+        if (!pairId || !idToIndex.has(pairId)) continue;
+        const targetIndex = idToIndex.get(pairId)!;
+        await tx.surveyQuestion.update({
+          where: { id: createdIds[i] },
+          data: { consistencyPairQuestionId: createdIds[targetIndex] },
+        });
+      }
+    });
+
+    return this.findOwned(id, founderId);
+  }
+
+  async remove(id: string, founderId: string) {
+    const survey = await this.findOwned(id, founderId);
+    if (survey.status !== 'DRAFT') throw new ForbiddenException('Only draft surveys can be deleted');
+    await this.prisma.survey.delete({ where: { id } });
+    return { success: true };
+  }
+
+  private validateForPublish(survey: any): string[] {
+    const errors: string[] = [];
+    if (!survey.title || !survey.title.trim()) errors.push('Your survey needs a title before it can be published.');
+    if (!survey.questions || survey.questions.length === 0) {
+      errors.push('Your survey needs at least one question before it can be published.');
+      return errors;
+    }
+    survey.questions.forEach((q: any, i: number) => {
+      const label = `Question ${i + 1}`;
+      if (!q.questionText || !q.questionText.trim()) errors.push(`${label} is missing question text.`);
+      if (CHOICE_TYPES.includes(q.type)) {
+        const validOptions = (q.options || []).filter((o: any) => o.label && o.label.trim());
+        if (validOptions.length < 1) errors.push(`${label} needs at least one option.`);
+      }
+      if (q.type === 'LINEAR_SCALE') {
+        const s = JSON.parse(q.settings || '{}');
+        if (typeof s.min !== 'number' || typeof s.max !== 'number' || s.min >= s.max) {
+          errors.push(`${label} has an invalid scale configuration.`);
+        }
+      }
+    });
+    return errors;
+  }
+
+  private generatePublicId() {
+    return randomBytes(9).toString('base64url');
+  }
+
+  private async uniquePublicId(): Promise<string> {
+    for (let i = 0; i < 5; i++) {
+      const id = this.generatePublicId();
+      const exists = await this.prisma.survey.findUnique({ where: { publicId: id } });
+      if (!exists) return id;
+    }
+    throw new Error('Could not generate a unique public survey id');
+  }
+
+  async publish(id: string, founderId: string) {
+    const survey = await this.findOwned(id, founderId);
+    if (survey.status !== 'DRAFT') throw new ForbiddenException('Only draft surveys can be published');
+
+    const errors = this.validateForPublish(survey);
+    if (errors.length) throw new BadRequestException(errors.join(' '));
+
+    const publicId = survey.publicId || (await this.uniquePublicId());
+    await this.prisma.survey.update({ where: { id }, data: { status: 'LIVE', publicId } });
+    return this.findOwned(id, founderId);
+  }
+
+  async close(id: string, founderId: string) {
+    const survey = await this.findOwned(id, founderId);
+    if (survey.status !== 'LIVE') throw new ForbiddenException('Only live surveys can be closed');
+    await this.prisma.survey.update({ where: { id }, data: { status: 'CLOSED' } });
+    return this.findOwned(id, founderId);
+  }
+
+  async reopen(id: string, founderId: string) {
+    const survey = await this.findOwned(id, founderId);
+    if (survey.status !== 'CLOSED') throw new ForbiddenException('Only closed surveys can be reopened');
+    await this.prisma.survey.update({ where: { id }, data: { status: 'LIVE' } });
+    return this.findOwned(id, founderId);
+  }
+
+  // A LIVE/CLOSED survey's questions are locked (see update() above) to protect
+  // existing responses. To change one, clone it into a brand-new DRAFT row —
+  // the original row, and every response pointing at it, is never touched.
+  async createVersion(id: string, founderId: string) {
+    const source = await this.findOwned(id, founderId);
+    const rootId = source.rootSurveyId || source.id;
+
+    const siblings = await this.prisma.survey.findMany({
+      where: { OR: [{ id: rootId }, { rootSurveyId: rootId }] },
+      select: { versionNumber: true },
+    });
+    const nextVersion = Math.max(1, ...siblings.map((s) => s.versionNumber)) + 1;
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const newSurvey = await tx.survey.create({
+        data: {
+          ideaId: source.ideaId,
+          founderId,
+          title: source.title,
+          description: source.description,
+          responseLimit: source.responseLimit,
+          collectEmail: source.collectEmail,
+          rootSurveyId: rootId,
+          versionNumber: nextVersion,
+        },
+      });
+
+      for (let i = 0; i < source.questions.length; i++) {
+        const q = source.questions[i];
+        await tx.surveyQuestion.create({
+          data: {
+            surveyId: newSurvey.id,
+            type: q.type,
+            questionText: q.questionText,
+            description: q.description,
+            required: q.required,
+            order: i,
+            settings: q.settings,
+            isControlQuestion: q.isControlQuestion,
+            abGroupKey: q.abGroupKey,
+            abVariant: q.abVariant,
+            mediaUrl: q.mediaUrl,
+            mediaType: q.mediaType,
+            options: {
+              create: q.options.map((opt: any, oi: number) => ({ label: opt.label, order: oi, imageUrl: opt.imageUrl })),
+            },
+          },
+        });
+        // consistencyPairQuestionId intentionally not carried over — the paired
+        // question's new id isn't known until this loop finishes; not worth the
+        // extra resolution pass for a rarely-used analytics-only setting on a clone.
+      }
+
+      if (source.incentive) {
+        await tx.surveyIncentive.create({
+          data: {
+            surveyId: newSurvey.id,
+            title: source.incentive.title,
+            description: source.incentive.description,
+            numberOfWinners: source.incentive.numberOfWinners,
+            eligibility: source.incentive.eligibility,
+            closingDate: source.incentive.closingDate,
+            collectContact: source.incentive.collectContact,
+          },
+        });
+      }
+
+      return newSurvey;
+    });
+
+    return this.findOwned(created.id, founderId);
+  }
+
+  async getVersions(id: string, founderId: string) {
+    const survey = await this.findOwned(id, founderId);
+    const rootId = survey.rootSurveyId || survey.id;
+    return this.prisma.survey.findMany({
+      where: { OR: [{ id: rootId }, { rootSurveyId: rootId }] },
+      select: { id: true, versionNumber: true, status: true, createdAt: true, publicId: true, _count: { select: { responses: true } } },
+      orderBy: { versionNumber: 'desc' },
+    });
+  }
+
+  async upsertIncentive(id: string, founderId: string, data: any) {
+    await this.findOwned(id, founderId);
+    const payload = {
+      title: data.title || '',
+      description: data.description || '',
+      numberOfWinners: Math.max(1, Number(data.numberOfWinners) || 1),
+      eligibility: data.eligibility || '',
+      closingDate: data.closingDate ? new Date(data.closingDate) : null,
+      collectContact: data.collectContact !== false,
+    };
+    await this.prisma.surveyIncentive.upsert({
+      where: { surveyId: id },
+      create: { surveyId: id, ...payload },
+      update: payload,
+    });
+    return this.findOwned(id, founderId);
+  }
+
+  async removeIncentive(id: string, founderId: string) {
+    await this.findOwned(id, founderId);
+    await this.prisma.surveyIncentive.deleteMany({ where: { surveyId: id } });
+    return this.findOwned(id, founderId);
+  }
+}

@@ -1,0 +1,530 @@
+'use client';
+import { useEffect, useState, useRef } from 'react';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { api } from '@/lib/api';
+import { getStoredUser } from '@/lib/auth';
+import { QUESTION_TYPES, QuestionType, SurveyDraft, IncentiveDraft, SurveyVersion, createQuestion, duplicateQuestion, surveyFromServer } from '@/lib/surveyTypes';
+import QuestionEditor from '@/components/survey/QuestionEditor';
+import QuestionPreview from '@/components/survey/QuestionPreview';
+
+const BLANK_INCENTIVE: IncentiveDraft = { title: '', description: '', numberOfWinners: 1, eligibility: '', closingDate: null, collectContact: true };
+
+export default function SurveyBuilderPage() {
+  const router = useRouter();
+  const params = useParams();
+  const searchParams = useSearchParams();
+  const surveyId = params.surveyId as string;
+
+  const [survey, setSurvey] = useState<SurveyDraft | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [mode, setMode] = useState<'build' | 'preview'>(searchParams.get('mode') === 'preview' ? 'preview' : 'build');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [statusActionLoading, setStatusActionLoading] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [versions, setVersions] = useState<SurveyVersion[]>([]);
+  const [showVersions, setShowVersions] = useState(false);
+  const [creatingVersion, setCreatingVersion] = useState(false);
+  const [incentiveForm, setIncentiveForm] = useState<IncentiveDraft>(BLANK_INCENTIVE);
+  const [incentiveSaving, setIncentiveSaving] = useState(false);
+  const [incentiveError, setIncentiveError] = useState('');
+  const [incentiveSavedAt, setIncentiveSavedAt] = useState<number | null>(null);
+  const [showIncentive, setShowIncentive] = useState(false);
+
+  useEffect(() => {
+    const user = getStoredUser();
+    if (!user || user.role !== 'FOUNDER') { router.push('/auth/login'); return; }
+    api.getSurvey(surveyId)
+      .then((res) => {
+        const s = surveyFromServer(res);
+        setSurvey(s);
+        setIncentiveForm(s.incentive || BLANK_INCENTIVE);
+        setShowIncentive(!!s.incentive);
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+    api.getSurveyVersions(surveyId).then((v) => setVersions(v.map((x: any) => ({ id: x.id, versionNumber: x.versionNumber, status: x.status, createdAt: x.createdAt, publicId: x.publicId, responseCount: x._count?.responses ?? 0 })))).catch(() => {});
+  }, [surveyId]);
+
+  useEffect(() => {
+    const onClickOutside = (e: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) setAddMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  if (loading) return <div className="flex items-center justify-center min-h-screen"><div className="text-slate-500">Loading survey...</div></div>;
+  if (error || !survey) return <div className="max-w-2xl mx-auto px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error || 'Survey not found'}</div></div>;
+
+  const patchQuestion = (id: string, patch: any) => {
+    setSurvey({ ...survey, questions: survey.questions.map((q) => (q.id === id ? { ...q, ...patch } : q)) });
+  };
+
+  const addQuestion = (type: QuestionType) => {
+    setSurvey({ ...survey, questions: [...survey.questions, createQuestion(type)] });
+    setAddMenuOpen(false);
+  };
+
+  const moveQuestion = (index: number, dir: -1 | 1) => {
+    const next = [...survey.questions];
+    const target = index + dir;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    setSurvey({ ...survey, questions: next });
+  };
+
+  const duplicateAt = (index: number) => {
+    const next = [...survey.questions];
+    next.splice(index + 1, 0, duplicateQuestion(next[index]));
+    setSurvey({ ...survey, questions: next });
+  };
+
+  const deleteAt = (index: number) => {
+    setSurvey({ ...survey, questions: survey.questions.filter((_, i) => i !== index) });
+  };
+
+  // Shared by Save Draft and Publish — Publish must never validate against
+  // stale DB state while the builder has unsaved local changes sitting in memory.
+  const saveSurvey = () =>
+    api.updateSurvey(survey.id, {
+      title: survey.title,
+      description: survey.description,
+      responseLimit: survey.responseLimit,
+      collectEmail: survey.collectEmail,
+      questions: survey.questions.map((q) => ({
+        id: q.id,
+        type: q.type,
+        questionText: q.questionText,
+        description: q.description,
+        required: q.required,
+        settings: q.settings,
+        options: q.type === 'YES_NO' ? [] : q.options.map((o) => ({ label: o.label, imageUrl: o.imageUrl })),
+        isControlQuestion: q.isControlQuestion,
+        consistencyPairQuestionId: q.consistencyPairQuestionId,
+        abGroupKey: q.abGroupKey,
+        abVariant: q.abVariant,
+        mediaUrl: q.mediaUrl,
+        mediaType: q.mediaType,
+      })),
+    });
+
+  const saveDraft = async () => {
+    setSaving(true);
+    setSaveError('');
+    try {
+      const res = await saveSurvey();
+      setSurvey(surveyFromServer(res));
+      setSavedAt(Date.now());
+    } catch (err: any) {
+      setSaveError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const publicUrl = survey.publicId && typeof window !== 'undefined' ? `${window.location.origin}/survey/${survey.publicId}` : '';
+
+  const publish = async () => {
+    setPublishing(true);
+    setSaveError('');
+    try {
+      await saveSurvey();
+      const res = await api.publishSurvey(survey.id);
+      setSurvey(surveyFromServer(res));
+    } catch (err: any) {
+      setSaveError(err.message);
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const closeSurvey = async () => {
+    if (!window.confirm('Close this survey?\n\nRespondents will no longer be able to submit responses.')) return;
+    setStatusActionLoading(true);
+    setSaveError('');
+    try {
+      const res = await api.closeSurvey(survey.id);
+      setSurvey(surveyFromServer(res));
+    } catch (err: any) {
+      setSaveError(err.message);
+    } finally {
+      setStatusActionLoading(false);
+    }
+  };
+
+  const reopenSurvey = async () => {
+    setStatusActionLoading(true);
+    setSaveError('');
+    try {
+      const res = await api.reopenSurvey(survey.id);
+      setSurvey(surveyFromServer(res));
+    } catch (err: any) {
+      setSaveError(err.message);
+    } finally {
+      setStatusActionLoading(false);
+    }
+  };
+
+  const copyLink = async () => {
+    if (!publicUrl) return;
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      // clipboard API can be unavailable (e.g. insecure context) — link is still shown/selectable
+    }
+  };
+
+  const createVersion = async () => {
+    setCreatingVersion(true);
+    setSaveError('');
+    try {
+      const newVersion = await api.createSurveyVersion(survey.id);
+      router.push(`/founder/surveys/${newVersion.id}/edit`);
+    } catch (err: any) {
+      setSaveError(err.message);
+      setCreatingVersion(false);
+    }
+  };
+
+  const saveIncentive = async () => {
+    setIncentiveSaving(true);
+    setIncentiveError('');
+    try {
+      const res = await api.upsertSurveyIncentive(survey.id, incentiveForm);
+      setSurvey(surveyFromServer(res));
+      setIncentiveSavedAt(Date.now());
+    } catch (err: any) {
+      setIncentiveError(err.message);
+    } finally {
+      setIncentiveSaving(false);
+    }
+  };
+
+  const removeIncentive = async () => {
+    setIncentiveSaving(true);
+    setIncentiveError('');
+    try {
+      const res = await api.removeSurveyIncentive(survey.id);
+      setSurvey(surveyFromServer(res));
+      setIncentiveForm(BLANK_INCENTIVE);
+      setShowIncentive(false);
+    } catch (err: any) {
+      setIncentiveError(err.message);
+    } finally {
+      setIncentiveSaving(false);
+    }
+  };
+
+  return (
+    <div className="max-w-3xl mx-auto px-6 py-8">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-6 pb-4 border-b border-slate-200">
+        <Link
+          href={survey.ideaId ? `/founder/ideas/${survey.ideaId}/dashboard` : '/founder/surveys'}
+          className="text-sm text-slate-500 hover:text-slate-800"
+        >
+          {survey.ideaId ? <>&larr; Back to Idea</> : <>&larr; Back to My Surveys</>}
+        </Link>
+
+        {survey.status === 'DRAFT' ? (
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+            <button
+              onClick={() => setMode('build')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${mode === 'build' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Build
+            </button>
+            <button
+              onClick={() => setMode('preview')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${mode === 'preview' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Preview
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <span className={`w-2 h-2 rounded-full ${survey.status === 'LIVE' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+            <span className={survey.status === 'LIVE' ? 'text-emerald-700' : 'text-amber-700'}>{survey.status === 'LIVE' ? 'Live' : 'Closed'}</span>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          {survey.status === 'DRAFT' && (
+            <>
+              {savedAt && !saving && <span className="text-xs text-emerald-600">Saved</span>}
+              <button
+                onClick={publish}
+                disabled={publishing}
+                className="border border-blue-200 text-blue-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-50 transition disabled:opacity-60"
+              >
+                {publishing ? 'Publishing...' : 'Publish'}
+              </button>
+              <button
+                onClick={saveDraft}
+                disabled={saving}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition disabled:opacity-60"
+              >
+                {saving ? 'Saving...' : 'Save Draft'}
+              </button>
+            </>
+          )}
+          {survey.status !== 'DRAFT' && (
+            <>
+              <Link href={`/founder/surveys/${survey.id}/analytics`} className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                View Analytics
+              </Link>
+              <Link href={`/founder/surveys/${survey.id}/responses`} className="text-sm bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:border-slate-300">
+                View Responses
+              </Link>
+              <button onClick={copyLink} className="text-sm bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:border-slate-300">
+                {linkCopied ? 'Copied!' : 'Copy Link'}
+              </button>
+              {survey.status === 'LIVE' && (
+                <button
+                  onClick={closeSurvey}
+                  disabled={statusActionLoading}
+                  className="text-sm bg-white border border-red-200 text-red-600 px-4 py-2 rounded-lg hover:bg-red-50 disabled:opacity-60"
+                >
+                  Close Survey
+                </button>
+              )}
+              {survey.status === 'CLOSED' && (
+                <button
+                  onClick={reopenSurvey}
+                  disabled={statusActionLoading}
+                  className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-60"
+                >
+                  Reopen Survey
+                </button>
+              )}
+              <button
+                onClick={createVersion}
+                disabled={creatingVersion}
+                title="Create a new draft to change questions — this survey and its responses stay exactly as they are"
+                className="text-sm bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:border-slate-300 disabled:opacity-60"
+              >
+                {creatingVersion ? 'Creating...' : 'Edit (New Version)'}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {versions.length > 1 && (
+        <div className="mb-6">
+          <button onClick={() => setShowVersions((v) => !v)} className="text-sm text-slate-500 hover:text-slate-800 flex items-center gap-1.5">
+            Version {survey.versionNumber} of {versions.length} <span className="text-xs">{showVersions ? '▲' : '▼'}</span>
+          </button>
+          {showVersions && (
+            <div className="mt-3 space-y-2">
+              {versions.map((v) => (
+                <Link
+                  key={v.id}
+                  href={v.status === 'DRAFT' ? `/founder/surveys/${v.id}/edit` : `/founder/surveys/${v.id}/analytics`}
+                  className={`flex items-center justify-between border rounded-lg px-4 py-2.5 text-sm ${v.id === survey.id ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                >
+                  <span className="font-medium text-slate-900">Version {v.versionNumber}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${v.status === 'LIVE' ? 'bg-emerald-50 text-emerald-700' : v.status === 'CLOSED' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>{v.status}</span>
+                  <span className="text-xs text-slate-400">{v.responseCount} response{v.responseCount !== 1 ? 's' : ''}</span>
+                  <span className="text-xs text-slate-400">{new Date(v.createdAt).toLocaleDateString()}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {saveError && <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-3 text-sm mb-6">{saveError}</div>}
+
+      {survey.ideaTitle && (
+        <p className="text-xs font-medium text-blue-600 uppercase tracking-wide mb-2">{survey.ideaTitle}</p>
+      )}
+
+      {publicUrl && (
+        <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 mb-6 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs text-slate-500 mb-0.5">Public link</p>
+            <p className="text-sm text-slate-700 truncate">{publicUrl}</p>
+          </div>
+          <button onClick={copyLink} className="text-xs shrink-0 bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-md hover:border-slate-300">
+            {linkCopied ? 'Copied!' : 'Copy'}
+          </button>
+        </div>
+      )}
+
+      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-6">
+        <button onClick={() => setShowIncentive((v) => !v)} className="w-full flex items-center justify-between text-left">
+          <div>
+            <h3 className="font-semibold text-slate-900">Respondent Incentive <span className="text-xs font-normal text-slate-400">(optional)</span></h3>
+            <p className="text-xs text-slate-500 mt-0.5">{survey.incentive ? `${survey.incentive.title} — ${survey.incentive.numberOfWinners} winner${survey.incentive.numberOfWinners !== 1 ? 's' : ''}` : 'No incentive configured'}</p>
+          </div>
+          <span className="text-xs text-slate-400">{showIncentive ? '▲' : '▼'}</span>
+        </button>
+        {showIncentive && (
+          <div className="mt-4 pt-4 border-t border-slate-100 space-y-3">
+            <input type="text" value={incentiveForm.title} onChange={(e) => setIncentiveForm({ ...incentiveForm, title: e.target.value })}
+              placeholder="Incentive title (e.g. ₹500 Amazon Gift Card)" className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm" />
+            <textarea value={incentiveForm.description} onChange={(e) => setIncentiveForm({ ...incentiveForm, description: e.target.value })}
+              placeholder="Description (optional)" rows={2} className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm resize-none" />
+            <div className="grid sm:grid-cols-2 gap-3">
+              <label className="text-sm text-slate-600">
+                Number of winners
+                <input type="number" min={1} value={incentiveForm.numberOfWinners}
+                  onChange={(e) => setIncentiveForm({ ...incentiveForm, numberOfWinners: Math.max(1, Number(e.target.value) || 1) })}
+                  className="w-full mt-1 border border-slate-200 rounded-md px-3 py-2 text-sm" />
+              </label>
+              <label className="text-sm text-slate-600">
+                Survey closes (optional)
+                <input type="date" value={incentiveForm.closingDate || ''} onChange={(e) => setIncentiveForm({ ...incentiveForm, closingDate: e.target.value || null })}
+                  className="w-full mt-1 border border-slate-200 rounded-md px-3 py-2 text-sm" />
+              </label>
+            </div>
+            <input type="text" value={incentiveForm.eligibility} onChange={(e) => setIncentiveForm({ ...incentiveForm, eligibility: e.target.value })}
+              placeholder="Eligibility (optional, e.g. must be 18+)" className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm" />
+            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+              <input type="checkbox" checked={incentiveForm.collectContact} onChange={(e) => setIncentiveForm({ ...incentiveForm, collectContact: e.target.checked })} className="accent-blue-600 w-4 h-4" />
+              Collect contact info for winners (shown as a separate, optional step — never linked to their survey answers)
+            </label>
+            {incentiveError && <p className="text-xs text-red-600">{incentiveError}</p>}
+            <div className="flex items-center gap-3">
+              <button onClick={saveIncentive} disabled={incentiveSaving || !incentiveForm.title.trim()} className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-60">
+                {incentiveSaving ? 'Saving...' : 'Save Incentive'}
+              </button>
+              {survey.incentive && (
+                <button onClick={removeIncentive} disabled={incentiveSaving} className="text-sm text-red-600 hover:text-red-700">Remove Incentive</button>
+              )}
+              {incentiveSavedAt && !incentiveSaving && <span className="text-xs text-emerald-600">Saved</span>}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {survey.status !== 'DRAFT' ? (
+        <>
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold text-slate-900 mb-1">{survey.title || 'Untitled survey'}</h1>
+            {survey.description && <p className="text-sm text-slate-600">{survey.description}</p>}
+          </div>
+          <div className="space-y-4">
+            {survey.questions.map((q, i) => (
+              <QuestionPreview key={q.id} question={q} index={i} />
+            ))}
+          </div>
+          <p className="text-center text-xs text-slate-400 mt-8">
+            {survey.status === 'LIVE'
+              ? 'This survey is live and can no longer be edited. Close it to stop accepting responses.'
+              : 'This survey is closed and no longer accepting responses. Reopen it to resume collecting, or view responses above.'}
+          </p>
+        </>
+      ) : mode === 'build' ? (
+        <>
+          <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-6">
+            <input
+              type="text"
+              value={survey.title}
+              onChange={(e) => setSurvey({ ...survey, title: e.target.value })}
+              placeholder="Survey title"
+              className="w-full text-2xl font-bold text-slate-900 border-0 focus:outline-none mb-2 placeholder:text-slate-300"
+            />
+            <textarea
+              value={survey.description}
+              onChange={(e) => setSurvey({ ...survey, description: e.target.value })}
+              placeholder="Description (optional)"
+              rows={2}
+              className="w-full text-sm text-slate-600 border-0 focus:outline-none resize-none placeholder:text-slate-400"
+            />
+            <div className="flex items-center gap-6 pt-4 mt-2 border-t border-slate-100 flex-wrap">
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                Maximum responses
+                <input
+                  type="number"
+                  min={1}
+                  value={survey.responseLimit ?? ''}
+                  onChange={(e) => setSurvey({ ...survey, responseLimit: e.target.value === '' ? null : Number(e.target.value) })}
+                  placeholder="No limit"
+                  className="w-24 border border-slate-200 rounded-md px-2 py-1 text-sm"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={survey.collectEmail}
+                  onChange={(e) => setSurvey({ ...survey, collectEmail: e.target.checked })}
+                  className="accent-blue-600 w-4 h-4"
+                />
+                Collect respondent email (optional)
+              </label>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {survey.questions.map((q, i) => (
+              <QuestionEditor
+                key={q.id}
+                question={q}
+                index={i}
+                total={survey.questions.length}
+                allQuestions={survey.questions}
+                onChange={(patch) => patchQuestion(q.id, patch)}
+                onMoveUp={() => moveQuestion(i, -1)}
+                onMoveDown={() => moveQuestion(i, 1)}
+                onDuplicate={() => duplicateAt(i)}
+                onDelete={() => deleteAt(i)}
+              />
+            ))}
+          </div>
+
+          {survey.questions.length === 0 && (
+            <div className="text-center py-10 text-slate-400 text-sm">No questions yet. Add your first question below.</div>
+          )}
+
+          <div className="relative mt-6 flex justify-center" ref={addMenuRef}>
+            <button
+              onClick={() => setAddMenuOpen((v) => !v)}
+              className="bg-white border border-dashed border-slate-300 text-slate-600 hover:border-blue-400 hover:text-blue-600 px-6 py-3 rounded-xl text-sm font-medium transition"
+            >
+              + Add Question
+            </button>
+            {addMenuOpen && (
+              <div className="absolute bottom-full mb-2 bg-white border border-slate-200 rounded-xl shadow-lg py-2 w-56 z-10">
+                {QUESTION_TYPES.map((t) => (
+                  <button
+                    key={t.value}
+                    onClick={() => addQuestion(t.value)}
+                    className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700"
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold text-slate-900 mb-1">{survey.title || 'Untitled survey'}</h1>
+            {survey.description && <p className="text-sm text-slate-600">{survey.description}</p>}
+          </div>
+          <div className="space-y-4">
+            {survey.questions.map((q, i) => (
+              <QuestionPreview key={q.id} question={q} index={i} />
+            ))}
+          </div>
+          {survey.questions.length === 0 && (
+            <div className="text-center py-10 text-slate-400 text-sm">Nothing to preview yet — add questions in Build mode.</div>
+          )}
+          <p className="text-center text-xs text-slate-400 mt-8">This is a preview. No responses are collected here.</p>
+        </>
+      )}
+    </div>
+  );
+}

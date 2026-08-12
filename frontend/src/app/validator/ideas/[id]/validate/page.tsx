@@ -3,33 +3,25 @@ import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { getStoredUser } from '@/lib/auth';
+import ScoreSelector from '@/components/ScoreSelector';
+import FrameworkOverviewPanel from '@/components/validator/FrameworkOverviewPanel';
+import { FRAMEWORKS } from '@/lib/frameworks';
 
 const RISK_LEVELS = ['LOW', 'MEDIUM', 'HIGH'];
 
-const ScoreSlider = ({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) => (
-  <div className="mb-3">
-    <div className="flex justify-between text-sm mb-1">
-      <span className="text-gray-700">{label}</span>
-      <span className="font-semibold text-indigo-600">{value} / 10</span>
-    </div>
-    <input type="range" min={1} max={10} step={1} className="w-full accent-indigo-600"
-      value={value} onChange={e => onChange(Number(e.target.value))} />
-  </div>
-);
-
 const RiskRow = ({ label, prob, impact, onProb, onImpact }: any) => (
   <div className="grid grid-cols-3 gap-4 mb-3 items-center">
-    <span className="text-sm text-gray-700">{label}</span>
+    <span className="text-sm text-slate-700">{label}</span>
     <div className="flex gap-1">
       {RISK_LEVELS.map(l => (
         <button type="button" key={l} onClick={() => onProb(l)}
-          className={`flex-1 py-1 text-xs rounded border transition ${prob === l ? 'bg-indigo-600 text-white border-indigo-600' : 'border-gray-300 text-gray-600'}`}>{l}</button>
+          className={`flex-1 py-1 text-xs rounded border transition ${prob === l ? 'bg-blue-600 text-white border-blue-600' : 'border-slate-300 text-slate-500'}`}>{l}</button>
       ))}
     </div>
     <div className="flex gap-1">
       {RISK_LEVELS.map(l => (
         <button type="button" key={l} onClick={() => onImpact(l)}
-          className={`flex-1 py-1 text-xs rounded border transition ${impact === l ? 'bg-red-600 text-white border-red-600' : 'border-gray-300 text-gray-600'}`}>{l}</button>
+          className={`flex-1 py-1 text-xs rounded border transition ${impact === l ? 'bg-red-600 text-white border-red-600' : 'border-slate-300 text-slate-500'}`}>{l}</button>
       ))}
     </div>
   </div>
@@ -37,16 +29,39 @@ const RiskRow = ({ label, prob, impact, onProb, onImpact }: any) => (
 
 const defaultRisk = () => ({ probability: 'LOW', impact: 'LOW' });
 
+const sum = (obj: Record<string, number>) => Object.values(obj).reduce((a, b) => a + b, 0);
+const avg = (values: number[]) => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : null);
+
+const weightedShark = (st: any) =>
+  (st.problemImportance / 10) * 25 + (st.marketSize / 10) * 20 + (st.revenuePotential / 10) * 20 +
+  (st.executionEase / 10) * 15 + (st.scalability / 10) * 20;
+
+const weightedStartup = (ss: any) =>
+  (ss.founderTeam / 10) * 25 + (ss.marketSize / 10) * 20 + (ss.productDifferentiation / 10) * 15 +
+  (ss.traction / 10) * 15 + (ss.businessModel / 10) * 10 + (ss.competition / 10) * 5 +
+  (ss.timing / 10) * 5 + (ss.fundingReadiness / 10) * 5;
+
+function scoreBadge(average: number | null) {
+  if (average == null) return null;
+  if (average >= 8) return { label: 'Strong', color: 'text-emerald-600 bg-emerald-50' };
+  if (average >= 5) return { label: 'Average', color: 'text-blue-600 bg-blue-50' };
+  if (average >= 3) return { label: 'Weak', color: 'text-amber-600 bg-amber-50' };
+  return { label: 'Critical', color: 'text-red-600 bg-red-50' };
+}
+
 export default function ValidateIdeaPage() {
   const router = useRouter();
   const params = useParams();
   const ideaId = params.id as string;
+  const draftKey = `iv_validate_draft_${ideaId}`;
 
   const [idea, setIdea] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState(0);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
 
   const [marketOpp, setMarketOpp] = useState({ problemSeverity: 5, marketSize: 5, willingnessToPay: 5, marketGrowthRate: 5, competitionGap: 5 });
   const [feasibility, setFeasibility] = useState({ technicalComplexity: 5, capitalRequirement: 5, regulatoryDifficulty: 5, talentAvailability: 5, timeToLaunch: 5 });
@@ -69,6 +84,32 @@ export default function ValidateIdeaPage() {
       .then(([idea, check]) => {
         if (check.alreadyValidated) { router.push('/validator/dashboard'); return; }
         setIdea(idea);
+
+        // restore a locally-saved draft, if one exists for this idea —
+        // nothing here touches the server, this is browser-only persistence
+        try {
+          const raw = localStorage.getItem(draftKey);
+          if (raw) {
+            const d = JSON.parse(raw);
+            if (d.marketOpp) setMarketOpp(d.marketOpp);
+            if (d.feasibility) setFeasibility(d.feasibility);
+            if (d.founderFit) setFounderFit(d.founderFit);
+            if (d.revenuePot) setRevenuePot(d.revenuePot);
+            if (d.scalability) setScalability(d.scalability);
+            if (d.risks) setRisks(d.risks);
+            if (d.investorAttr) setInvestorAttr(d.investorAttr);
+            if (d.innovation) setInnovation(d.innovation);
+            if (d.socialImpact) setSocialImpact(d.socialImpact);
+            if (d.customerVal) setCustomerVal(d.customerVal);
+            if (d.sharkTank) setSharkTank(d.sharkTank);
+            if (d.startupSucc) setStartupSucc(d.startupSucc);
+            if (d.openFeedback) setOpenFeedback(d.openFeedback);
+            if (typeof d.step === 'number') setStep(d.step);
+            setDraftRestored(true);
+          }
+        } catch {
+          // corrupted draft — ignore and start fresh
+        }
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
@@ -76,6 +117,15 @@ export default function ValidateIdeaPage() {
 
   const setRisk = (type: string, field: 'probability' | 'impact', val: string) => {
     setRisks(r => ({ ...r, [type]: { ...r[type as keyof typeof r], [field]: val } }));
+  };
+
+  const saveDraft = () => {
+    localStorage.setItem(draftKey, JSON.stringify({
+      marketOpp, feasibility, founderFit, revenuePot, scalability, risks,
+      investorAttr, innovation, socialImpact, customerVal, sharkTank, startupSucc, openFeedback, step,
+    }));
+    setDraftSavedAt(Date.now());
+    setTimeout(() => setDraftSavedAt(null), 2000);
   };
 
   const submit = async () => {
@@ -111,6 +161,7 @@ export default function ValidateIdeaPage() {
         startupSuccess: startupSucc,
         openFeedback,
       });
+      localStorage.removeItem(draftKey);
       router.push('/validator/dashboard?submitted=1');
     } catch (err: any) {
       setError(err.message);
@@ -122,241 +173,342 @@ export default function ValidateIdeaPage() {
   const steps = ['Idea Overview', 'Market & Feasibility', 'Founder & Revenue', 'Scalability & Risk',
     'Investor & Innovation', 'Social & Customer', 'Shark Tank & Success', 'Open Feedback'];
 
-  if (loading) return <div className="flex items-center justify-center min-h-screen text-gray-400">Loading...</div>;
-  if (error && !idea) return <div className="max-w-2xl mx-auto px-6 py-10"><div className="bg-red-50 text-red-700 rounded-lg p-4">{error}</div></div>;
+  // this step's live average (1-10) — cosmetic only, submission payload is unchanged
+  const stepValues: number[] = (() => {
+    switch (step) {
+      case 1: return [...Object.values(marketOpp), ...Object.values(feasibility)];
+      case 2: return [...Object.values(founderFit), ...Object.values(revenuePot)];
+      case 3: return [...Object.values(scalability)];
+      case 4: return [...Object.values(investorAttr), ...Object.values(innovation)];
+      case 5: return [...Object.values(socialImpact)];
+      case 6: return [...Object.values(sharkTank), ...Object.values(startupSucc)];
+      default: return [];
+    }
+  })();
+  const stepAverage = avg(stepValues);
+  const badge = scoreBadge(stepAverage);
+
+  // scores for the framework overview panel — only for steps already passed
+  const frameworkScores: Record<string, number | null> = {
+    'Market Opportunity': step > 1 ? sum(marketOpp) : null,
+    'Feasibility': step > 1 ? sum(feasibility) : null,
+    'Founder Fit': step > 2 ? sum(founderFit) : null,
+    'Revenue Potential': step > 2 ? sum(revenuePot) : null,
+    'Scalability': step > 3 ? sum(scalability) : null,
+    'Investor Attractiveness': step > 4 ? sum(investorAttr) : null,
+    'Innovation': step > 4 ? sum(innovation) : null,
+    'Social Impact': step > 5 ? sum(socialImpact) : null,
+    'Shark Tank Score': step > 6 ? weightedShark(sharkTank) : null,
+    'Startup Success': step > 6 ? weightedStartup(startupSucc) : null,
+  };
+
+  const passedValues: number[] = [
+    ...(step > 1 ? [...Object.values(marketOpp), ...Object.values(feasibility)] : []),
+    ...(step > 2 ? [...Object.values(founderFit), ...Object.values(revenuePot)] : []),
+    ...(step > 3 ? Object.values(scalability) : []),
+    ...(step > 4 ? [...Object.values(investorAttr), ...Object.values(innovation)] : []),
+    ...(step > 5 ? Object.values(socialImpact) : []),
+    ...(step > 6 ? [...Object.values(sharkTank), ...Object.values(startupSucc)] : []),
+  ];
+  const overallAverage = avg(passedValues) ?? 0;
+  const completedFrameworksCount = FRAMEWORKS.filter(f => f.stepIndex < step).length;
+
+  if (loading) return <div className="flex items-center justify-center min-h-screen text-slate-500">Loading...</div>;
+  if (error && !idea) return <div className="max-w-2xl mx-auto px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error}</div></div>;
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-10">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Validate: {idea?.title}</h1>
-        <p className="text-gray-500 text-sm mt-1">{idea?.industryCategory} • Step {step + 1} of {steps.length}</p>
-      </div>
-
-      {/* Progress */}
-      <div className="flex gap-1 mb-8 overflow-x-auto">
-        {steps.map((s, i) => (
-          <div key={i} className={`flex-1 h-1.5 rounded-full min-w-[20px] ${i <= step ? 'bg-indigo-600' : 'bg-gray-200'}`} />
-        ))}
-      </div>
-
-      {error && <div className="bg-red-50 text-red-700 rounded-lg px-4 py-3 mb-4 text-sm">{error}</div>}
-
-      <div className="bg-white border border-gray-200 rounded-xl p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-5">{steps[step]}</h2>
-
-        {step === 0 && idea && (
-          <div className="space-y-4">
-            {[
-              { label: 'Problem Statement', val: idea.problemStatement },
-              { label: 'Solution', val: idea.solutionDescription },
-              { label: 'Target Customer', val: idea.targetCustomer },
-              { label: 'Revenue Model', val: idea.revenueModel },
-              { label: 'Stage', val: idea.stage?.replace('_', ' ') },
-            ].map(f => (
-              <div key={f.label}>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">{f.label}</p>
-                <p className="text-sm text-gray-800">{f.val}</p>
-              </div>
-            ))}
-            {idea.selfAssessment && (
-              <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Founder Self-Assessment</p>
-                <div className="grid grid-cols-5 gap-2">
-                  {[
-                    ['Industry Knowledge', idea.selfAssessment.industryKnowledge],
-                    ['Experience', idea.selfAssessment.relevantExperience],
-                    ['Network', idea.selfAssessment.networkAccess],
-                    ['Passion', idea.selfAssessment.passion],
-                    ['Skill Alignment', idea.selfAssessment.skillAlignment],
-                  ].map(([l, v]) => (
-                    <div key={l as string} className="text-center bg-indigo-50 rounded-lg p-2">
-                      <div className="text-lg font-bold text-indigo-700">{v}</div>
-                      <div className="text-xs text-gray-500">{l}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {idea.founderContext && (
-              <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Why This Founder</p>
-                <p className="text-sm text-gray-800">{idea.founderContext}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {step === 1 && (
-          <div>
-            <h3 className="font-medium text-gray-700 mb-3">Market Opportunity (score 1–10 each)</h3>
-            <ScoreSlider label="Problem Severity" value={marketOpp.problemSeverity} onChange={v => setMarketOpp({ ...marketOpp, problemSeverity: v })} />
-            <ScoreSlider label="Market Size" value={marketOpp.marketSize} onChange={v => setMarketOpp({ ...marketOpp, marketSize: v })} />
-            <ScoreSlider label="Customer Willingness to Pay" value={marketOpp.willingnessToPay} onChange={v => setMarketOpp({ ...marketOpp, willingnessToPay: v })} />
-            <ScoreSlider label="Market Growth Rate" value={marketOpp.marketGrowthRate} onChange={v => setMarketOpp({ ...marketOpp, marketGrowthRate: v })} />
-            <ScoreSlider label="Competition Gap" value={marketOpp.competitionGap} onChange={v => setMarketOpp({ ...marketOpp, competitionGap: v })} />
-            <hr className="my-5" />
-            <h3 className="font-medium text-gray-700 mb-3">Feasibility (higher = easier)</h3>
-            <ScoreSlider label="Technical Complexity" value={feasibility.technicalComplexity} onChange={v => setFeasibility({ ...feasibility, technicalComplexity: v })} />
-            <ScoreSlider label="Capital Requirement" value={feasibility.capitalRequirement} onChange={v => setFeasibility({ ...feasibility, capitalRequirement: v })} />
-            <ScoreSlider label="Regulatory Difficulty" value={feasibility.regulatoryDifficulty} onChange={v => setFeasibility({ ...feasibility, regulatoryDifficulty: v })} />
-            <ScoreSlider label="Talent Availability" value={feasibility.talentAvailability} onChange={v => setFeasibility({ ...feasibility, talentAvailability: v })} />
-            <ScoreSlider label="Time to Launch" value={feasibility.timeToLaunch} onChange={v => setFeasibility({ ...feasibility, timeToLaunch: v })} />
-          </div>
-        )}
-
-        {step === 2 && (
-          <div>
-            <h3 className="font-medium text-gray-700 mb-3">Founder Fit Assessment</h3>
-            <ScoreSlider label="Industry Knowledge" value={founderFit.industryKnowledge} onChange={v => setFounderFit({ ...founderFit, industryKnowledge: v })} />
-            <ScoreSlider label="Relevant Experience" value={founderFit.relevantExperience} onChange={v => setFounderFit({ ...founderFit, relevantExperience: v })} />
-            <ScoreSlider label="Network Access" value={founderFit.networkAccess} onChange={v => setFounderFit({ ...founderFit, networkAccess: v })} />
-            <ScoreSlider label="Passion / Interest" value={founderFit.passion} onChange={v => setFounderFit({ ...founderFit, passion: v })} />
-            <ScoreSlider label="Skill Alignment" value={founderFit.skillAlignment} onChange={v => setFounderFit({ ...founderFit, skillAlignment: v })} />
-            <hr className="my-5" />
-            <h3 className="font-medium text-gray-700 mb-3">Revenue Potential</h3>
-            <ScoreSlider label="Pricing Power" value={revenuePot.pricingPower} onChange={v => setRevenuePot({ ...revenuePot, pricingPower: v })} />
-            <ScoreSlider label="Recurring Revenue Potential" value={revenuePot.recurringRevenuePotential} onChange={v => setRevenuePot({ ...revenuePot, recurringRevenuePotential: v })} />
-            <ScoreSlider label="Profit Margin Potential" value={revenuePot.profitMarginPotential} onChange={v => setRevenuePot({ ...revenuePot, profitMarginPotential: v })} />
-            <ScoreSlider label="Upselling Opportunities" value={revenuePot.upsellOpportunities} onChange={v => setRevenuePot({ ...revenuePot, upsellOpportunities: v })} />
-            <ScoreSlider label="Customer Lifetime Value" value={revenuePot.customerLifetimeValue} onChange={v => setRevenuePot({ ...revenuePot, customerLifetimeValue: v })} />
-          </div>
-        )}
-
-        {step === 3 && (
-          <div>
-            <h3 className="font-medium text-gray-700 mb-3">Scalability</h3>
-            <ScoreSlider label="Geographic Expansion" value={scalability.geographicExpansion} onChange={v => setScalability({ ...scalability, geographicExpansion: v })} />
-            <ScoreSlider label="Automation Potential" value={scalability.automationPotential} onChange={v => setScalability({ ...scalability, automationPotential: v })} />
-            <ScoreSlider label="Operational Complexity" value={scalability.operationalComplexity} onChange={v => setScalability({ ...scalability, operationalComplexity: v })} />
-            <ScoreSlider label="Dependence on Founder" value={scalability.dependenceOnFounder} onChange={v => setScalability({ ...scalability, dependenceOnFounder: v })} />
-            <ScoreSlider label="Network Effects" value={scalability.networkEffects} onChange={v => setScalability({ ...scalability, networkEffects: v })} />
-            <hr className="my-5" />
-            <h3 className="font-medium text-gray-700 mb-3">Risk Assessment</h3>
-            <div className="grid grid-cols-3 gap-4 mb-2 text-xs font-medium text-gray-500">
-              <span>Risk Type</span><span>Probability</span><span>Impact</span>
-            </div>
-            {[
-              { key: 'competition', label: 'Competition' },
-              { key: 'regulatory', label: 'Regulatory' },
-              { key: 'technology', label: 'Technology' },
-              { key: 'funding', label: 'Funding' },
-              { key: 'marketAdoption', label: 'Market Adoption' },
-            ].map(r => (
-              <RiskRow key={r.key} label={r.label}
-                prob={(risks as any)[r.key].probability} impact={(risks as any)[r.key].impact}
-                onProb={(v: string) => setRisk(r.key, 'probability', v)}
-                onImpact={(v: string) => setRisk(r.key, 'impact', v)} />
-            ))}
-          </div>
-        )}
-
-        {step === 4 && (
-          <div>
-            <h3 className="font-medium text-gray-700 mb-3">Investor Attractiveness</h3>
-            <ScoreSlider label="Market Size" value={investorAttr.marketSize} onChange={v => setInvestorAttr({ ...investorAttr, marketSize: v })} />
-            <ScoreSlider label="Growth Potential" value={investorAttr.growthPotential} onChange={v => setInvestorAttr({ ...investorAttr, growthPotential: v })} />
-            <ScoreSlider label="Scalability" value={investorAttr.scalability} onChange={v => setInvestorAttr({ ...investorAttr, scalability: v })} />
-            <ScoreSlider label="Exit Potential" value={investorAttr.exitPotential} onChange={v => setInvestorAttr({ ...investorAttr, exitPotential: v })} />
-            <ScoreSlider label="Defensibility" value={investorAttr.defensibility} onChange={v => setInvestorAttr({ ...investorAttr, defensibility: v })} />
-            <hr className="my-5" />
-            <h3 className="font-medium text-gray-700 mb-3">Innovation</h3>
-            <ScoreSlider label="Uniqueness" value={innovation.uniqueness} onChange={v => setInnovation({ ...innovation, uniqueness: v })} />
-            <ScoreSlider label="Patentability" value={innovation.patentability} onChange={v => setInnovation({ ...innovation, patentability: v })} />
-            <ScoreSlider label="Competitive Advantage" value={innovation.competitiveAdvantage} onChange={v => setInnovation({ ...innovation, competitiveAdvantage: v })} />
-            <ScoreSlider label="Disruption Potential" value={innovation.disruptionPotential} onChange={v => setInnovation({ ...innovation, disruptionPotential: v })} />
-            <ScoreSlider label="Defensibility" value={innovation.defensibility} onChange={v => setInnovation({ ...innovation, defensibility: v })} />
-          </div>
-        )}
-
-        {step === 5 && (
-          <div>
-            <h3 className="font-medium text-gray-700 mb-3">Social Impact</h3>
-            <ScoreSlider label="Job Creation" value={socialImpact.jobCreation} onChange={v => setSocialImpact({ ...socialImpact, jobCreation: v })} />
-            <ScoreSlider label="Environmental Benefit" value={socialImpact.environmentalBenefit} onChange={v => setSocialImpact({ ...socialImpact, environmentalBenefit: v })} />
-            <ScoreSlider label="Community Benefit" value={socialImpact.communityBenefit} onChange={v => setSocialImpact({ ...socialImpact, communityBenefit: v })} />
-            <ScoreSlider label="Inclusion" value={socialImpact.inclusion} onChange={v => setSocialImpact({ ...socialImpact, inclusion: v })} />
-            <ScoreSlider label="Sustainability" value={socialImpact.sustainability} onChange={v => setSocialImpact({ ...socialImpact, sustainability: v })} />
-            <hr className="my-5" />
-            <h3 className="font-medium text-gray-700 mb-3">Customer Validation (Yes / No)</h3>
-            {[
-              { key: 'wouldUse', label: 'Would you use this product?' },
-              { key: 'wouldPay', label: 'Would you pay for it?' },
-              { key: 'wouldRecommend', label: 'Would you recommend it?' },
-              { key: 'solvesRealProblem', label: 'Does it solve a real problem?' },
-              { key: 'betterThanAlternatives', label: 'Is it better than current alternatives?' },
-            ].map(q => (
-              <div key={q.key} className="flex items-center justify-between py-2 border-b border-gray-100">
-                <span className="text-sm text-gray-700">{q.label}</span>
-                <div className="flex gap-2">
-                  {[{ val: true, label: 'Yes' }, { val: false, label: 'No' }].map(o => (
-                    <button type="button" key={o.label}
-                      onClick={() => setCustomerVal({ ...customerVal, [q.key]: o.val })}
-                      className={`px-3 py-1 text-sm rounded border transition ${(customerVal as any)[q.key] === o.val ? (o.val ? 'bg-green-600 text-white border-green-600' : 'bg-red-600 text-white border-red-600') : 'border-gray-300 text-gray-600'}`}>
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {step === 6 && (
-          <div>
-            <h3 className="font-medium text-gray-700 mb-1">Shark Tank Score</h3>
-            <p className="text-xs text-gray-500 mb-3">Weighted: Problem 25%, Market 20%, Revenue 20%, Execution 15%, Scalability 20%</p>
-            <ScoreSlider label="Problem Importance (25%)" value={sharkTank.problemImportance} onChange={v => setSharkTank({ ...sharkTank, problemImportance: v })} />
-            <ScoreSlider label="Market Size (20%)" value={sharkTank.marketSize} onChange={v => setSharkTank({ ...sharkTank, marketSize: v })} />
-            <ScoreSlider label="Revenue Potential (20%)" value={sharkTank.revenuePotential} onChange={v => setSharkTank({ ...sharkTank, revenuePotential: v })} />
-            <ScoreSlider label="Execution Ease (15%)" value={sharkTank.executionEase} onChange={v => setSharkTank({ ...sharkTank, executionEase: v })} />
-            <ScoreSlider label="Scalability (20%)" value={sharkTank.scalability} onChange={v => setSharkTank({ ...sharkTank, scalability: v })} />
-            <hr className="my-5" />
-            <h3 className="font-medium text-gray-700 mb-1">Startup Validation Score</h3>
-            <p className="text-xs text-gray-500 mb-3">Weighted: Team 25% · Market 20% · Product 15% · Traction 15% · Biz Model 10% · Competition 5% · Timing 5% · Funding 5%</p>
-            <ScoreSlider label="Founder / Team Quality (25%)" value={startupSucc.founderTeam} onChange={v => setStartupSucc({ ...startupSucc, founderTeam: v })} />
-            <ScoreSlider label="Market Size & Opportunity (20%)" value={startupSucc.marketSize} onChange={v => setStartupSucc({ ...startupSucc, marketSize: v })} />
-            <ScoreSlider label="Product Differentiation (15%)" value={startupSucc.productDifferentiation} onChange={v => setStartupSucc({ ...startupSucc, productDifferentiation: v })} />
-            <ScoreSlider label="Traction & Evidence of Demand (15%)" value={startupSucc.traction} onChange={v => setStartupSucc({ ...startupSucc, traction: v })} />
-            <ScoreSlider label="Business Model Strength (10%)" value={startupSucc.businessModel} onChange={v => setStartupSucc({ ...startupSucc, businessModel: v })} />
-            <ScoreSlider label="Competitive Advantage (5%)" value={startupSucc.competition} onChange={v => setStartupSucc({ ...startupSucc, competition: v })} />
-            <ScoreSlider label="Market Timing (5%)" value={startupSucc.timing} onChange={v => setStartupSucc({ ...startupSucc, timing: v })} />
-            <ScoreSlider label="Funding Readiness (5%)" value={startupSucc.fundingReadiness} onChange={v => setStartupSucc({ ...startupSucc, fundingReadiness: v })} />
-          </div>
-        )}
-
-        {step === 7 && (
-          <div className="space-y-4">
-            {[
-              { key: 'biggestStrength', label: 'Biggest Strength', placeholder: 'What is the strongest aspect of this idea?' },
-              { key: 'biggestWeakness', label: 'Biggest Weakness', placeholder: 'What is the most significant weakness or risk?' },
-              { key: 'suggestedImprovement', label: 'One Suggested Improvement', placeholder: 'What single change would most improve this idea?' },
-            ].map(f => (
-              <div key={f.key}>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{f.label} *</label>
-                <textarea rows={3} required placeholder={f.placeholder}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                  value={(openFeedback as any)[f.key]}
-                  onChange={e => setOpenFeedback({ ...openFeedback, [f.key]: e.target.value })} />
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="flex gap-3 mt-6">
-          {step > 0 && (
-            <button onClick={() => setStep(s => s - 1)}
-              className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg font-semibold hover:bg-gray-50">Back</button>
-          )}
-          {step < steps.length - 1 ? (
-            <button onClick={() => setStep(s => s + 1)}
-              className="flex-1 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold hover:bg-indigo-700">Next</button>
-          ) : (
-            <button onClick={submit} disabled={submitting}
-              className="flex-1 bg-green-600 text-white py-2.5 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50">
-              {submitting ? 'Submitting...' : 'Submit Validation'}
-            </button>
-          )}
+    <div className="max-w-6xl mx-auto px-8 py-10">
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Validate: {idea?.title}</h1>
+          <p className="text-slate-500 text-sm mt-1">{idea?.industryCategory} • Step {step + 1} of {steps.length}</p>
         </div>
+        <span className="text-xs px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 font-medium whitespace-nowrap">In Progress</span>
+      </div>
+
+      {draftRestored && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-700 rounded-lg px-4 py-2.5 mb-4 text-sm flex items-center justify-between">
+          <span>Restored your saved draft from earlier.</span>
+          <button onClick={() => setDraftRestored(false)} className="text-blue-500 hover:text-blue-700">✕</button>
+        </div>
+      )}
+
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
+        <div className="flex-1 min-w-0">
+          {/* Progress */}
+          <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
+            <span>{Math.round((step / (steps.length - 1)) * 100)}% Complete</span>
+          </div>
+          <div className="flex gap-1 mb-8 overflow-x-auto">
+            {steps.map((s, i) => (
+              <div key={i} className={`flex-1 h-1.5 rounded-full min-w-[20px] ${i <= step ? 'bg-blue-600' : 'bg-slate-200'}`} />
+            ))}
+          </div>
+
+          {error && <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-3 mb-4 text-sm">{error}</div>}
+
+          <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-semibold text-slate-900">{steps[step]}</h2>
+              {badge && (
+                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${badge.color}`}>
+                  {stepAverage!.toFixed(1)} / 10 — {badge.label}
+                </span>
+              )}
+            </div>
+
+            {step === 0 && idea && (
+              <div className="space-y-4">
+                {idea.videoUrl && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Pitch Video</p>
+                    <a href={idea.videoUrl} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 hover:underline break-all">
+                      ▶ {idea.videoUrl}
+                    </a>
+                  </div>
+                )}
+                {idea.teamMembers && JSON.parse(idea.teamMembers).length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Team</p>
+                    <div className="space-y-1.5">
+                      {JSON.parse(idea.teamMembers).map((m: { name: string; linkedinUrl: string }, i: number) => (
+                        <div key={i} className="flex items-center gap-2 text-sm">
+                          <span className="text-slate-800 font-medium">{m.name}</span>
+                          <a href={m.linkedinUrl} target="_blank" rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-700 hover:underline text-xs break-all">
+                            {m.linkedinUrl}
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {[
+                  { label: 'Problem Statement', val: idea.problemStatement },
+                  { label: 'Solution', val: idea.solutionDescription },
+                  { label: 'Target Customer', val: idea.targetCustomer },
+                  { label: 'Revenue Model', val: idea.revenueModel },
+                  { label: 'Stage', val: idea.stage?.replace('_', ' ') },
+                ].map(f => (
+                  <div key={f.label}>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">{f.label}</p>
+                    <p className="text-sm text-slate-800">{f.val}</p>
+                  </div>
+                ))}
+                {idea.selfAssessment && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Founder Self-Assessment</p>
+                    <div className="grid grid-cols-5 gap-2">
+                      {[
+                        ['Industry Knowledge', idea.selfAssessment.industryKnowledge],
+                        ['Experience', idea.selfAssessment.relevantExperience],
+                        ['Network', idea.selfAssessment.networkAccess],
+                        ['Passion', idea.selfAssessment.passion],
+                        ['Skill Alignment', idea.selfAssessment.skillAlignment],
+                      ].map(([l, v]) => (
+                        <div key={l as string} className="text-center bg-blue-50 rounded-lg p-2">
+                          <div className="text-lg font-bold text-blue-700">{v}</div>
+                          <div className="text-xs text-slate-500">{l}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {idea.founderContext && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Why This Founder</p>
+                    <p className="text-sm text-slate-800">{idea.founderContext}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {step === 1 && (
+              <div>
+                <h3 className="font-medium text-slate-800 mb-3">Market Opportunity</h3>
+                <ScoreSelector label="Problem Severity" description="How severe and urgent is the problem this idea solves?" value={marketOpp.problemSeverity} onChange={v => setMarketOpp({ ...marketOpp, problemSeverity: v })} />
+                <ScoreSelector label="Market Size" value={marketOpp.marketSize} onChange={v => setMarketOpp({ ...marketOpp, marketSize: v })} />
+                <ScoreSelector label="Customer Willingness to Pay" value={marketOpp.willingnessToPay} onChange={v => setMarketOpp({ ...marketOpp, willingnessToPay: v })} />
+                <ScoreSelector label="Market Growth Rate" value={marketOpp.marketGrowthRate} onChange={v => setMarketOpp({ ...marketOpp, marketGrowthRate: v })} />
+                <ScoreSelector label="Competition Gap" value={marketOpp.competitionGap} onChange={v => setMarketOpp({ ...marketOpp, competitionGap: v })} />
+                <hr className="my-5 border-slate-200" />
+                <h3 className="font-medium text-slate-800 mb-3">Feasibility (higher = easier)</h3>
+                <ScoreSelector label="Technical Complexity" value={feasibility.technicalComplexity} onChange={v => setFeasibility({ ...feasibility, technicalComplexity: v })} />
+                <ScoreSelector label="Capital Requirement" value={feasibility.capitalRequirement} onChange={v => setFeasibility({ ...feasibility, capitalRequirement: v })} />
+                <ScoreSelector label="Regulatory Difficulty" value={feasibility.regulatoryDifficulty} onChange={v => setFeasibility({ ...feasibility, regulatoryDifficulty: v })} />
+                <ScoreSelector label="Talent Availability" value={feasibility.talentAvailability} onChange={v => setFeasibility({ ...feasibility, talentAvailability: v })} />
+                <ScoreSelector label="Time to Launch" value={feasibility.timeToLaunch} onChange={v => setFeasibility({ ...feasibility, timeToLaunch: v })} />
+              </div>
+            )}
+
+            {step === 2 && (
+              <div>
+                <h3 className="font-medium text-slate-800 mb-3">Founder Fit Assessment</h3>
+                <ScoreSelector label="Industry Knowledge" value={founderFit.industryKnowledge} onChange={v => setFounderFit({ ...founderFit, industryKnowledge: v })} />
+                <ScoreSelector label="Relevant Experience" value={founderFit.relevantExperience} onChange={v => setFounderFit({ ...founderFit, relevantExperience: v })} />
+                <ScoreSelector label="Network Access" value={founderFit.networkAccess} onChange={v => setFounderFit({ ...founderFit, networkAccess: v })} />
+                <ScoreSelector label="Passion / Interest" value={founderFit.passion} onChange={v => setFounderFit({ ...founderFit, passion: v })} />
+                <ScoreSelector label="Skill Alignment" value={founderFit.skillAlignment} onChange={v => setFounderFit({ ...founderFit, skillAlignment: v })} />
+                <hr className="my-5 border-slate-200" />
+                <h3 className="font-medium text-slate-800 mb-3">Revenue Potential</h3>
+                <ScoreSelector label="Pricing Power" value={revenuePot.pricingPower} onChange={v => setRevenuePot({ ...revenuePot, pricingPower: v })} />
+                <ScoreSelector label="Recurring Revenue Potential" value={revenuePot.recurringRevenuePotential} onChange={v => setRevenuePot({ ...revenuePot, recurringRevenuePotential: v })} />
+                <ScoreSelector label="Profit Margin Potential" value={revenuePot.profitMarginPotential} onChange={v => setRevenuePot({ ...revenuePot, profitMarginPotential: v })} />
+                <ScoreSelector label="Upselling Opportunities" value={revenuePot.upsellOpportunities} onChange={v => setRevenuePot({ ...revenuePot, upsellOpportunities: v })} />
+                <ScoreSelector label="Customer Lifetime Value" value={revenuePot.customerLifetimeValue} onChange={v => setRevenuePot({ ...revenuePot, customerLifetimeValue: v })} />
+              </div>
+            )}
+
+            {step === 3 && (
+              <div>
+                <h3 className="font-medium text-slate-800 mb-3">Scalability</h3>
+                <ScoreSelector label="Geographic Expansion" value={scalability.geographicExpansion} onChange={v => setScalability({ ...scalability, geographicExpansion: v })} />
+                <ScoreSelector label="Automation Potential" value={scalability.automationPotential} onChange={v => setScalability({ ...scalability, automationPotential: v })} />
+                <ScoreSelector label="Operational Complexity" value={scalability.operationalComplexity} onChange={v => setScalability({ ...scalability, operationalComplexity: v })} />
+                <ScoreSelector label="Dependence on Founder" value={scalability.dependenceOnFounder} onChange={v => setScalability({ ...scalability, dependenceOnFounder: v })} />
+                <ScoreSelector label="Network Effects" value={scalability.networkEffects} onChange={v => setScalability({ ...scalability, networkEffects: v })} />
+                <hr className="my-5 border-slate-200" />
+                <h3 className="font-medium text-slate-800 mb-3">Risk Assessment</h3>
+                <div className="grid grid-cols-3 gap-4 mb-2 text-xs font-medium text-slate-500">
+                  <span>Risk Type</span><span>Probability</span><span>Impact</span>
+                </div>
+                {[
+                  { key: 'competition', label: 'Competition' },
+                  { key: 'regulatory', label: 'Regulatory' },
+                  { key: 'technology', label: 'Technology' },
+                  { key: 'funding', label: 'Funding' },
+                  { key: 'marketAdoption', label: 'Market Adoption' },
+                ].map(r => (
+                  <RiskRow key={r.key} label={r.label}
+                    prob={(risks as any)[r.key].probability} impact={(risks as any)[r.key].impact}
+                    onProb={(v: string) => setRisk(r.key, 'probability', v)}
+                    onImpact={(v: string) => setRisk(r.key, 'impact', v)} />
+                ))}
+              </div>
+            )}
+
+            {step === 4 && (
+              <div>
+                <h3 className="font-medium text-slate-800 mb-3">Investor Attractiveness</h3>
+                <ScoreSelector label="Market Size" value={investorAttr.marketSize} onChange={v => setInvestorAttr({ ...investorAttr, marketSize: v })} />
+                <ScoreSelector label="Growth Potential" value={investorAttr.growthPotential} onChange={v => setInvestorAttr({ ...investorAttr, growthPotential: v })} />
+                <ScoreSelector label="Scalability" value={investorAttr.scalability} onChange={v => setInvestorAttr({ ...investorAttr, scalability: v })} />
+                <ScoreSelector label="Exit Potential" value={investorAttr.exitPotential} onChange={v => setInvestorAttr({ ...investorAttr, exitPotential: v })} />
+                <ScoreSelector label="Defensibility" value={investorAttr.defensibility} onChange={v => setInvestorAttr({ ...investorAttr, defensibility: v })} />
+                <hr className="my-5 border-slate-200" />
+                <h3 className="font-medium text-slate-800 mb-3">Innovation</h3>
+                <ScoreSelector label="Uniqueness" value={innovation.uniqueness} onChange={v => setInnovation({ ...innovation, uniqueness: v })} />
+                <ScoreSelector label="Patentability" value={innovation.patentability} onChange={v => setInnovation({ ...innovation, patentability: v })} />
+                <ScoreSelector label="Competitive Advantage" value={innovation.competitiveAdvantage} onChange={v => setInnovation({ ...innovation, competitiveAdvantage: v })} />
+                <ScoreSelector label="Disruption Potential" value={innovation.disruptionPotential} onChange={v => setInnovation({ ...innovation, disruptionPotential: v })} />
+                <ScoreSelector label="Defensibility" value={innovation.defensibility} onChange={v => setInnovation({ ...innovation, defensibility: v })} />
+              </div>
+            )}
+
+            {step === 5 && (
+              <div>
+                <h3 className="font-medium text-slate-800 mb-3">Social Impact</h3>
+                <ScoreSelector label="Job Creation" value={socialImpact.jobCreation} onChange={v => setSocialImpact({ ...socialImpact, jobCreation: v })} />
+                <ScoreSelector label="Environmental Benefit" value={socialImpact.environmentalBenefit} onChange={v => setSocialImpact({ ...socialImpact, environmentalBenefit: v })} />
+                <ScoreSelector label="Community Benefit" value={socialImpact.communityBenefit} onChange={v => setSocialImpact({ ...socialImpact, communityBenefit: v })} />
+                <ScoreSelector label="Inclusion" value={socialImpact.inclusion} onChange={v => setSocialImpact({ ...socialImpact, inclusion: v })} />
+                <ScoreSelector label="Sustainability" value={socialImpact.sustainability} onChange={v => setSocialImpact({ ...socialImpact, sustainability: v })} />
+                <hr className="my-5 border-slate-200" />
+                <h3 className="font-medium text-slate-800 mb-3">Customer Validation (Yes / No)</h3>
+                {[
+                  { key: 'wouldUse', label: 'Would you use this product?' },
+                  { key: 'wouldPay', label: 'Would you pay for it?' },
+                  { key: 'wouldRecommend', label: 'Would you recommend it?' },
+                  { key: 'solvesRealProblem', label: 'Does it solve a real problem?' },
+                  { key: 'betterThanAlternatives', label: 'Is it better than current alternatives?' },
+                ].map(q => (
+                  <div key={q.key} className="flex items-center justify-between py-2 border-b border-slate-100">
+                    <span className="text-sm text-slate-700">{q.label}</span>
+                    <div className="flex gap-2">
+                      {[{ val: true, label: 'Yes' }, { val: false, label: 'No' }].map(o => (
+                        <button type="button" key={o.label}
+                          onClick={() => setCustomerVal({ ...customerVal, [q.key]: o.val })}
+                          className={`px-3 py-1 text-sm rounded border transition ${(customerVal as any)[q.key] === o.val ? (o.val ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-red-600 text-white border-red-600') : 'border-slate-300 text-slate-500'}`}>
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {step === 6 && (
+              <div>
+                <h3 className="font-medium text-slate-800 mb-1">Shark Tank Score</h3>
+                <p className="text-xs text-slate-500 mb-3">Weighted: Problem 25%, Market 20%, Revenue 20%, Execution 15%, Scalability 20%</p>
+                <ScoreSelector label="Problem Importance (25%)" value={sharkTank.problemImportance} onChange={v => setSharkTank({ ...sharkTank, problemImportance: v })} />
+                <ScoreSelector label="Market Size (20%)" value={sharkTank.marketSize} onChange={v => setSharkTank({ ...sharkTank, marketSize: v })} />
+                <ScoreSelector label="Revenue Potential (20%)" value={sharkTank.revenuePotential} onChange={v => setSharkTank({ ...sharkTank, revenuePotential: v })} />
+                <ScoreSelector label="Execution Ease (15%)" value={sharkTank.executionEase} onChange={v => setSharkTank({ ...sharkTank, executionEase: v })} />
+                <ScoreSelector label="Scalability (20%)" value={sharkTank.scalability} onChange={v => setSharkTank({ ...sharkTank, scalability: v })} />
+                <hr className="my-5 border-slate-200" />
+                <h3 className="font-medium text-slate-800 mb-1">Startup Validation Score</h3>
+                <p className="text-xs text-slate-500 mb-3">Weighted: Team 25% · Market 20% · Product 15% · Traction 15% · Biz Model 10% · Competition 5% · Timing 5% · Funding 5%</p>
+                <ScoreSelector label="Founder / Team Quality (25%)" value={startupSucc.founderTeam} onChange={v => setStartupSucc({ ...startupSucc, founderTeam: v })} />
+                <ScoreSelector label="Market Size & Opportunity (20%)" value={startupSucc.marketSize} onChange={v => setStartupSucc({ ...startupSucc, marketSize: v })} />
+                <ScoreSelector label="Product Differentiation (15%)" value={startupSucc.productDifferentiation} onChange={v => setStartupSucc({ ...startupSucc, productDifferentiation: v })} />
+                <ScoreSelector label="Traction & Evidence of Demand (15%)" value={startupSucc.traction} onChange={v => setStartupSucc({ ...startupSucc, traction: v })} />
+                <ScoreSelector label="Business Model Strength (10%)" value={startupSucc.businessModel} onChange={v => setStartupSucc({ ...startupSucc, businessModel: v })} />
+                <ScoreSelector label="Competitive Advantage (5%)" value={startupSucc.competition} onChange={v => setStartupSucc({ ...startupSucc, competition: v })} />
+                <ScoreSelector label="Market Timing (5%)" value={startupSucc.timing} onChange={v => setStartupSucc({ ...startupSucc, timing: v })} />
+                <ScoreSelector label="Funding Readiness (5%)" value={startupSucc.fundingReadiness} onChange={v => setStartupSucc({ ...startupSucc, fundingReadiness: v })} />
+              </div>
+            )}
+
+            {step === 7 && (
+              <div className="space-y-4">
+                {[
+                  { key: 'biggestStrength', label: 'Biggest Strength', placeholder: 'What is the strongest aspect of this idea?' },
+                  { key: 'biggestWeakness', label: 'Biggest Weakness', placeholder: 'What is the most significant weakness or risk?' },
+                  { key: 'suggestedImprovement', label: 'One Suggested Improvement', placeholder: 'What single change would most improve this idea?' },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">{f.label} *</label>
+                    <textarea rows={3} required placeholder={f.placeholder}
+                      className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                      value={(openFeedback as any)[f.key]}
+                      onChange={e => setOpenFeedback({ ...openFeedback, [f.key]: e.target.value })} />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 mt-6">
+              {step > 0 && (
+                <button onClick={() => setStep(s => s - 1)}
+                  className="border border-slate-300 text-slate-700 px-5 py-2.5 rounded-lg font-semibold hover:bg-slate-50">← Previous</button>
+              )}
+              <button onClick={saveDraft}
+                className="border border-slate-300 text-slate-600 px-5 py-2.5 rounded-lg font-semibold hover:bg-slate-50">
+                {draftSavedAt ? 'Saved ✓' : 'Save Draft'}
+              </button>
+              <div className="flex-1" />
+              {step < steps.length - 1 ? (
+                <button onClick={() => setStep(s => s + 1)}
+                  className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-blue-700">Next Framework →</button>
+              ) : (
+                <button onClick={submit} disabled={submitting}
+                  className="bg-emerald-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-emerald-700 disabled:opacity-50">
+                  {submitting ? 'Submitting...' : 'Submit Validation'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <FrameworkOverviewPanel
+          currentStepIndex={step}
+          scores={frameworkScores}
+          overallAveragePct={overallAverage * 10}
+          completedCount={completedFrameworksCount}
+        />
       </div>
     </div>
   );

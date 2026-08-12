@@ -7,3 +7,4 @@ dist/
 .next/
 .claude/
 backend/prisma/migrations/
+graphify-out/
