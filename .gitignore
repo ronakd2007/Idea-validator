@@ -8,3 +8,4 @@ dist/
 .claude/
 backend/prisma/migrations/
 graphify-out/
+*.tsbuildinfo
