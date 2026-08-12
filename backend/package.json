@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "start:dev": "ts-node -r tsconfig-paths/register src/main.ts",
-    "build": "prisma generate && tsc -p tsconfig.json",
+    "build": "prisma generate && prisma db push --skip-generate && tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "postinstall": "prisma generate",
     "prisma:seed": "ts-node -r tsconfig-paths/register prisma/seed.ts"
