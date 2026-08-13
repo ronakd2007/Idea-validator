@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -32,6 +32,32 @@ export class IdeasController {
   @Roles('FOUNDER')
   getDashboard(@Param('id') id: string, @Request() req) {
     return this.ideasService.getDashboard(id, req.user.userId);
+  }
+
+  // Declared before ':id' so 'versions'/'share' path segments are never
+  // captured as an idea id by the catch-all route below.
+  @Get(':id/versions')
+  @Roles('FOUNDER')
+  getVersions(@Param('id') id: string, @Request() req) {
+    return this.ideasService.getVersions(id, req.user.userId);
+  }
+
+  @Post(':id/share')
+  @Roles('FOUNDER')
+  enableShare(@Param('id') id: string, @Request() req, @Body() body: any) {
+    return this.ideasService.enableShare(id, req.user.userId, body?.settings);
+  }
+
+  @Patch(':id/share')
+  @Roles('FOUNDER')
+  updateShareSettings(@Param('id') id: string, @Request() req, @Body() body: any) {
+    return this.ideasService.updateShareSettings(id, req.user.userId, body?.settings ?? body);
+  }
+
+  @Delete(':id/share')
+  @Roles('FOUNDER')
+  disableShare(@Param('id') id: string, @Request() req) {
+    return this.ideasService.disableShare(id, req.user.userId);
   }
 
   @Get(':id')

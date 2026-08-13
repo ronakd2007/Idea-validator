@@ -63,6 +63,22 @@ model Idea {
   version             Int      @default(1)
   paymentStatus       String   @default("PENDING")
   submittedAt         DateTime @default(now())
+
+  // Public validation page — mirrors Survey.publicId: minted on first share,
+  // non-guessable, revocable via the enabled flag without losing the link.
+  publicId            String?  @unique
+  publicShareEnabled  Boolean  @default(false)
+  publicShareSettings String   @default("{}") // JSON section toggles, see ideas.service SHARE_DEFAULTS
+
+  // Last generated AI summary, persisted so the dashboard and public page
+  // don't re-bill Groq on every view. Null until first generated.
+  aiSummary   String?
+  aiSummaryAt DateTime?
+
+  // Admin override for the 48h dashboard gate. Set = results are visible now,
+  // regardless of the timer. Only an ADMIN route can write this; a founder can
+  // never unlock their own idea early.
+  dashboardUnlockedAt DateTime?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

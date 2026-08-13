@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { isViewAsRequest } from '../auth/view-as.context';
 
 /**
  * The complete set of actions this platform records. If an action is not in
@@ -46,6 +47,10 @@ export const ACTION_CATALOG: Record<string, { category: string; label: string }>
   ADMIN_USER_ACTIVATED: { category: 'ADMIN', label: 'Activated user' },
   ADMIN_USER_DEACTIVATED: { category: 'ADMIN', label: 'Deactivated user' },
   ADMIN_IDEA_DELETED: { category: 'ADMIN', label: 'Deleted idea' },
+  ADMIN_DASHBOARD_UNLOCKED: { category: 'ADMIN', label: 'Unlocked dashboard early' },
+  ADMIN_DASHBOARD_RELOCKED: { category: 'ADMIN', label: 'Restored dashboard timer' },
+  VIEW_AS_USER_STARTED: { category: 'ADMIN', label: 'Started viewing as user' },
+  VIEW_AS_USER_ENDED: { category: 'ADMIN', label: 'Stopped viewing as user' },
   ADMIN_SURVEY_STATUS_CHANGED: { category: 'ADMIN', label: 'Changed survey status' },
   ADMIN_SURVEY_DELETED: { category: 'ADMIN', label: 'Deleted survey' },
 };
@@ -93,6 +98,12 @@ export class ActivityService {
    */
   async log(input: LogInput): Promise<void> {
     try {
+      // An admin browsing in View-as-User mode must never create feed events
+      // in the viewed user's name (e.g. IDEA_RESULTS_VIEWED, VALIDATION_OPENED)
+      // — those would forge the user's own history. The admin's start/end of
+      // view mode is logged from /admin routes, where this context is not set.
+      if (isViewAsRequest()) return;
+
       const entry = ACTION_CATALOG[input.action];
       if (!entry) {
         // An unknown action is a bug in the caller, not a reason to fail their request.

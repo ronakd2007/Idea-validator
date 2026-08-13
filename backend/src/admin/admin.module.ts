@@ -4,11 +4,13 @@ import { AdminActivityController } from './admin-activity.controller';
 import { AdminService } from './admin.service';
 import { IdeasModule } from '../ideas/ideas.module';
 import { SurveyModule } from '../survey/survey.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   // Imported so the admin inspection routes can reuse the existing idea
   // dashboard and survey analytics services rather than duplicating them.
-  imports: [IdeasModule, SurveyModule],
+  // AuthModule provides ViewAsService for the View-as-User endpoints.
+  imports: [IdeasModule, SurveyModule, AuthModule],
   controllers: [AdminController, AdminActivityController],
   providers: [AdminService],
 })

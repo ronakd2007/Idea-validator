@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ViewAsReadonlyMiddleware } from './auth/view-as-readonly.middleware';
 import { PrismaModule } from './prisma/prisma.module';
 import { ActivityModule } from './activity/activity.module';
 import { AuthModule } from './auth/auth.module';
@@ -33,4 +34,10 @@ import { SurveyModule } from './survey/survey.module';
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    // View as User is strictly read-only: any mutating request carrying the
+    // X-View-As header is refused before it reaches guards or handlers.
+    consumer.apply(ViewAsReadonlyMiddleware).forRoutes('*');
+  }
+}

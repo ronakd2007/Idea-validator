@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, ForbiddenException, ServiceUnavailableException, BadRequestException } from '@nestjs/common';
 import Groq from 'groq-sdk';
 import { PrismaService } from '../prisma/prisma.service';
+import { SurveyAnalyticsService } from '../survey/survey-analytics.service';
 
 const CHOICE_TYPES = ['MULTIPLE_CHOICE', 'CHECKBOXES', 'DROPDOWN'];
 const KNOWN_TYPES = ['SHORT_ANSWER', 'PARAGRAPH', 'MULTIPLE_CHOICE', 'CHECKBOXES', 'DROPDOWN', 'YES_NO', 'RATING', 'LINEAR_SCALE'];
@@ -18,7 +19,44 @@ export interface GeneratedQuestion {
 export class AiService {
   private readonly logger = new Logger(AiService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private surveyAnalytics: SurveyAnalyticsService) {}
+
+  /**
+   * Real numbers from the idea's best-answered survey, formatted for the
+   * prompt. Returns null when there is no survey evidence yet — the prompt
+   * says so explicitly instead of letting the model invent customer data.
+   */
+  private async buildSurveyEvidence(ideaId: string): Promise<string | null> {
+    const survey = await this.prisma.survey.findFirst({
+      where: { ideaId, responses: { some: {} } },
+      orderBy: { responses: { _count: 'desc' } },
+      select: { id: true, title: true },
+    });
+    if (!survey) return null;
+
+    try {
+      const analytics = await this.surveyAnalytics.getAnalytics(survey.id, null, {});
+      const lines: string[] = [
+        `Survey "${survey.title}" — ${analytics.summary.totalResponses} responses, completion rate ${analytics.activity.completionRate != null ? Math.round(analytics.activity.completionRate) + '%' : 'n/a'}.`,
+      ];
+      const primary = analytics.eligibleOutcomeQuestions[0];
+      if (primary) {
+        const qa: any = analytics.questions.find((q: any) => q.id === primary.id);
+        if (primary.type === 'YES_NO') {
+          const yes = qa?.distribution?.find((d: any) => d.label === 'Yes');
+          if (yes) lines.push(`"${primary.questionText}": ${yes.pct.toFixed(0)}% answered Yes.`);
+        } else if (qa?.average != null) {
+          lines.push(`"${primary.questionText}": average ${qa.average.toFixed(1)}/${qa.max}.`);
+        }
+      }
+      for (const insight of analytics.insights.slice(0, 3)) {
+        lines.push(`${insight.title}: ${insight.body}`);
+      }
+      return lines.join('\n');
+    } catch {
+      return null;
+    }
+  }
 
   // Groq failures used to escape as bare 500 "Internal server error", which
   // made a bad/revoked GROQ_API_KEY in production undiagnosable from the UI.
@@ -39,7 +77,7 @@ export class AiService {
     return new ServiceUnavailableException('AI service is temporarily unavailable — try again shortly.');
   }
 
-  async generateDashboardSummary(ideaId: string, founderId: string): Promise<{ summary: string }> {
+  async generateDashboardSummary(ideaId: string, founderId: string, refresh = false, readOnly = false): Promise<{ summary: string; generatedAt: Date | null; cached: boolean }> {
     const idea = await this.prisma.idea.findUnique({
       where: { id: ideaId },
       include: {
@@ -67,8 +105,23 @@ export class AiService {
     if (idea.founderId !== founderId) throw new ForbiddenException('Access denied');
     if (!idea.validations.length) throw new ForbiddenException('No validations yet to summarise');
 
+    // Persisted summary is served unless the founder explicitly regenerates —
+    // the dashboard, public page and report all read the same stored text.
+    if (!refresh && idea.aiSummary) {
+      return { summary: idea.aiSummary, generatedAt: idea.aiSummaryAt, cached: true };
+    }
+
+    // Read-only callers (View as User) never trigger generation: no Groq
+    // bill, no write to the idea. Empty summary just renders as "not
+    // generated yet" on the dashboard.
+    if (readOnly) {
+      return { summary: idea.aiSummary || '', generatedAt: idea.aiSummaryAt, cached: true };
+    }
+
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) throw new ServiceUnavailableException('Groq API key not configured');
+
+    const surveyEvidence = await this.buildSurveyEvidence(ideaId);
 
     const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
     const sum5 = (obj: any, keys: string[]) =>
@@ -145,6 +198,15 @@ CUSTOMER VALIDATION:
 VALIDATOR FEEDBACK (${feedbacks.length} responses):
 ${feedbacks.map((f, i) => `[${i + 1}] Strength: "${f.strength}" | Weakness: "${f.weakness}" | Suggestion: "${f.improvement}"`).join('\n')}
 
+RISK ASSESSMENT (validator votes, HIGH probability counts per risk):
+${['competition', 'regulatory', 'technology', 'funding', 'marketAdoption'].map((r) => {
+  const highs = v.filter(x => x.riskAssessment && (x.riskAssessment as any)[`${r}Probability`] === 'HIGH').length;
+  return `- ${r}: ${highs}/${v.filter(x => x.riskAssessment).length} rated HIGH`;
+}).join('\n')}
+
+CUSTOMER SURVEY EVIDENCE (real responses from the public, separate from expert opinion):
+${surveyEvidence || 'None yet — this founder has not collected any public survey responses.'}
+
 Write the summary in this exact format — use plain text, no markdown, no bullet symbols:
 
 VERDICT
@@ -157,7 +219,7 @@ WHAT NEEDS WORK
 [2-3 sentences about the weakest areas, referencing specific low scores and repeated concerns from validators.]
 
 NEXT STEPS
-[2-3 concrete, specific actions the founder should take based on this validation data.]`;
+[Exactly 3 actions, each as one sentence. Every action MUST cite a specific number from the data above (a score, a percentage, or a count) as its justification. Never give generic advice a founder could get without this data. If there is no customer survey evidence yet, one of the 3 actions must be running a survey with 20-30 target customers to test the weakest scored area.]`;
 
     const groq = new Groq({ apiKey });
     let completion;
@@ -172,7 +234,11 @@ NEXT STEPS
     }
 
     const summary = completion.choices[0]?.message?.content || '';
-    return { summary };
+    const generatedAt = new Date();
+    // Persist so subsequent dashboard visits, the public page and the report
+    // reuse this text instead of re-billing Groq.
+    await this.prisma.idea.update({ where: { id: ideaId }, data: { aiSummary: summary, aiSummaryAt: generatedAt } });
+    return { summary, generatedAt, cached: false };
   }
 
   // Powers the "AI Builder" entry point on the existing survey creation flow —

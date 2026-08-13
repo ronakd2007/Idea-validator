@@ -1,10 +1,41 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
+import { SurveyAnalyticsService } from '../survey/survey-analytics.service';
+
+// Which sections a founder exposes on their idea's public validation page.
+// Problem/solution default OFF — the pitch itself is the founder's IP; scores
+// and aggregate evidence are what a public "proof of validation" needs.
+export const SHARE_DEFAULTS = {
+  showProblem: false,
+  showSolution: false,
+  showScores: true,
+  showStrengthsRisks: true,
+  showAiInsight: true,
+  showCounts: true,
+};
+
+// Labels for the public strengths/risks bullets — mirrors the dashboard's
+// MATRIX_CATEGORIES so both surfaces describe categories with the same words.
+const CATEGORY_LABELS: { key: string; label: string }[] = [
+  { key: 'marketOpportunityAvg', label: 'Market opportunity' },
+  { key: 'feasibilityAvg', label: 'Feasibility' },
+  { key: 'founderFitAvg', label: 'Founder fit' },
+  { key: 'revenuePotentialAvg', label: 'Revenue potential' },
+  { key: 'scalabilityAvg', label: 'Scalability' },
+  { key: 'innovationAvg', label: 'Innovation' },
+  { key: 'socialImpactAvg', label: 'Social impact' },
+  { key: 'investorAttractivenessAvg', label: 'Investor attractiveness' },
+];
 
 @Injectable()
 export class IdeasService {
-  constructor(private prisma: PrismaService, private activity: ActivityService) {}
+  constructor(
+    private prisma: PrismaService,
+    private activity: ActivityService,
+    private surveyAnalytics: SurveyAnalyticsService,
+  ) {}
 
   private async actor(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true, role: true } });
@@ -88,12 +119,19 @@ export class IdeasService {
     return idea;
   }
 
-  // The dashboard unlocks once the idea has enough validations to be
-  // meaningful OR enough time has passed — whichever comes first. The timer
-  // starts when payment completes (that's when validators can first see it),
-  // falling back to submission time for anything without a completed payment.
-  private static readonly UNLOCK_VALIDATION_COUNT = 3;
+  // The dashboard unlocks 48 hours after payment completes (that's when
+  // validators can first see the idea), falling back to submission time for
+  // anything without a completed payment. Purely time-based by design — the
+  // validation count is reported while locked but never unlocks early.
   private static readonly UNLOCK_AFTER_HOURS = 48;
+
+  // Two deliberate escape hatches, neither reachable by a founder:
+  //  - DASHBOARD_GATE_BYPASS=true disables the timer for the whole server
+  //    (local development and demos — never set this in production).
+  //  - Idea.dashboardUnlockedAt is an admin-only per-idea override.
+  private get gateBypassed() {
+    return process.env.DASHBOARD_GATE_BYPASS === 'true';
+  }
 
   async getDashboard(ideaId: string, founderId: string) {
     const idea = await this.prisma.idea.findUnique({
@@ -129,7 +167,7 @@ export class IdeasService {
     const liveSince = idea.payments[0]?.createdAt ?? idea.submittedAt;
     const unlockAt = new Date(liveSince.getTime() + IdeasService.UNLOCK_AFTER_HOURS * 60 * 60 * 1000);
     const unlocked =
-      idea.validations.length >= IdeasService.UNLOCK_VALIDATION_COUNT || Date.now() >= unlockAt.getTime();
+      this.gateBypassed || idea.dashboardUnlockedAt != null || Date.now() >= unlockAt.getTime();
 
     if (!unlocked) {
       // Locked: return progress only — never the validations themselves, so
@@ -138,7 +176,6 @@ export class IdeasService {
         available: false,
         unlockAt,
         validationCount: idea.validations.length,
-        validationsNeeded: IdeasService.UNLOCK_VALIDATION_COUNT,
         idea: { id: idea.id, title: idea.title, submittedAt: idea.submittedAt },
       };
     }
@@ -262,7 +299,9 @@ export class IdeasService {
     // A validator's contact details are shared with the founder the moment they
     // submit a validation — not gated behind their contactPreferences opt-in,
     // which only governs the separate "open to further contact" signal below.
-    const openFeedbacks = validations.filter(v => v.openFeedback).map(v => ({
+    // v.validator is optional-chained throughout: some callers (version history,
+    // the public page) aggregate score relations without loading validator rows.
+    const openFeedbacks = validations.filter(v => v.openFeedback && v.validator).map(v => ({
       strength: v.openFeedback.biggestStrength,
       weakness: v.openFeedback.biggestWeakness,
       improvement: v.openFeedback.suggestedImprovement,
@@ -275,7 +314,7 @@ export class IdeasService {
 
     const interestedContacts = validations
       .filter(v => {
-        const prefs = JSON.parse(v.validator.validatorProfile?.contactPreferences || '[]');
+        const prefs = JSON.parse(v.validator?.validatorProfile?.contactPreferences || '[]');
         return Array.isArray(prefs) && prefs.length > 0;
       })
       .map(v => ({
@@ -384,5 +423,254 @@ export class IdeasService {
     });
 
     return { success: true };
+  }
+
+  // ---------- public validation page (share) ----------
+
+  private generatePublicId() {
+    return randomBytes(9).toString('base64url');
+  }
+
+  private async uniquePublicId(): Promise<string> {
+    for (let i = 0; i < 5; i++) {
+      const id = this.generatePublicId();
+      const exists = await this.prisma.idea.findUnique({ where: { publicId: id } });
+      if (!exists) return id;
+    }
+    throw new Error('Could not generate a unique public idea id');
+  }
+
+  private async findOwned(ideaId: string, founderId: string) {
+    const idea = await this.prisma.idea.findUnique({ where: { id: ideaId } });
+    if (!idea) throw new NotFoundException('Idea not found');
+    if (idea.founderId !== founderId) throw new ForbiddenException('Access denied');
+    return idea;
+  }
+
+  private parseShareSettings(raw: string | null | undefined) {
+    try {
+      return { ...SHARE_DEFAULTS, ...(JSON.parse(raw || '{}') || {}) };
+    } catch {
+      return { ...SHARE_DEFAULTS };
+    }
+  }
+
+  // Only the keys in SHARE_DEFAULTS survive, and only as booleans — a crafted
+  // payload can't smuggle extra data into the stored settings JSON.
+  private sanitizeShareSettings(input: any) {
+    const clean: Record<string, boolean> = {};
+    for (const key of Object.keys(SHARE_DEFAULTS)) {
+      if (input && typeof input[key] === 'boolean') clean[key] = input[key];
+    }
+    return clean;
+  }
+
+  async enableShare(ideaId: string, founderId: string, settings?: any) {
+    const idea = await this.findOwned(ideaId, founderId);
+    const publicId = idea.publicId || (await this.uniquePublicId());
+    const merged = { ...this.parseShareSettings(idea.publicShareSettings), ...this.sanitizeShareSettings(settings) };
+    const updated = await this.prisma.idea.update({
+      where: { id: ideaId },
+      data: { publicId, publicShareEnabled: true, publicShareSettings: JSON.stringify(merged) },
+      select: { publicId: true, publicShareEnabled: true, publicShareSettings: true },
+    });
+    return { ...updated, publicShareSettings: this.parseShareSettings(updated.publicShareSettings) };
+  }
+
+  async updateShareSettings(ideaId: string, founderId: string, settings: any) {
+    const idea = await this.findOwned(ideaId, founderId);
+    const merged = { ...this.parseShareSettings(idea.publicShareSettings), ...this.sanitizeShareSettings(settings) };
+    const updated = await this.prisma.idea.update({
+      where: { id: ideaId },
+      data: { publicShareSettings: JSON.stringify(merged) },
+      select: { publicId: true, publicShareEnabled: true, publicShareSettings: true },
+    });
+    return { ...updated, publicShareSettings: this.parseShareSettings(updated.publicShareSettings) };
+  }
+
+  // Disabling keeps the publicId, so re-enabling restores the same link.
+  async disableShare(ideaId: string, founderId: string) {
+    await this.findOwned(ideaId, founderId);
+    await this.prisma.idea.update({ where: { id: ideaId }, data: { publicShareEnabled: false } });
+    return { success: true };
+  }
+
+  private dominantRiskLevel(riskSummary: Record<string, { LOW: number; MEDIUM: number; HIGH: number }>): string | null {
+    const risks = Object.values(riskSummary || {});
+    if (!risks.length) return null;
+    const order = ['LOW', 'MEDIUM', 'HIGH'];
+    let worst = 0;
+    for (const counts of risks) {
+      // dominant level for this risk type = the most-voted level (ties -> the riskier one)
+      let level = 0;
+      let best = -1;
+      order.forEach((l, i) => {
+        const c = counts[l as keyof typeof counts] || 0;
+        if (c >= best) { best = c; level = i; }
+      });
+      if (level > worst) worst = level;
+    }
+    return order[worst];
+  }
+
+  // First 1-2 sentences of the stored AI summary's VERDICT section — the only
+  // AI text the public page ever shows.
+  private extractAiInsight(aiSummary: string | null): string | null {
+    if (!aiSummary) return null;
+    const match = aiSummary.match(/VERDICT\s*\n+([\s\S]*?)(?=\n\s*(WHAT'S WORKING|WHAT NEEDS WORK|NEXT STEPS)|$)/i);
+    const body = (match?.[1] || '').replace(/\*\*/g, '').trim();
+    if (!body) return null;
+    const sentences = body.match(/[^.!?]+[.!?]+/g) || [body];
+    return sentences.slice(0, 2).join(' ').trim();
+  }
+
+  /**
+   * Everything on the public page is aggregate or founder-approved. Built as
+   * an explicit whitelist — no idea/validator/founder object is ever spread
+   * into the response, so adding DB fields later can't silently leak here.
+   */
+  async getPublicIdea(publicId: string) {
+    const idea = await this.prisma.idea.findUnique({
+      where: { publicId },
+      include: {
+        validations: {
+          include: {
+            validator: { select: { id: true, name: true, email: true, phone: true, validatorProfile: true } },
+            marketOpportunity: true, feasibility: true, founderFit: true, revenuePotential: true,
+            scalability: true, riskAssessment: true, investorAttractiveness: true, innovation: true,
+            socialImpact: true, customerValidation: true, sharkTank: true, startupSuccess: true, openFeedback: true,
+          },
+        },
+        surveys: { select: { id: true, status: true, _count: { select: { responses: true } } } },
+      },
+    });
+    if (!idea || !idea.publicShareEnabled) throw new NotFoundException('This validation page is not available');
+
+    const settings = this.parseShareSettings(idea.publicShareSettings);
+    const a: any = this.aggregateScores(idea.validations);
+    const validationCount = idea.validations.length;
+    const overallScore = Math.round(a.overallScore || 0);
+
+    // Customer evidence: the linked survey with the most responses.
+    const surveysWithResponses = idea.surveys.filter((s) => s._count.responses > 0);
+    let customer: { positivePct: number | null; responses: number } | null = null;
+    const totalResponses = surveysWithResponses.reduce((sum, s) => sum + s._count.responses, 0);
+    if (surveysWithResponses.length) {
+      const top = [...surveysWithResponses].sort((x, y) => y._count.responses - x._count.responses)[0];
+      try {
+        const analytics = await this.surveyAnalytics.getAnalytics(top.id, null, {});
+        const primary = analytics.eligibleOutcomeQuestions[0];
+        let positivePct: number | null = null;
+        if (primary) {
+          const qa: any = analytics.questions.find((q: any) => q.id === primary.id);
+          if (primary.type === 'YES_NO') {
+            const yes = qa?.distribution?.find((d: any) => d.label === 'Yes');
+            positivePct = yes ? yes.pct : null;
+          } else if (qa?.average != null) {
+            positivePct = (qa.average / qa.max) * 100;
+          }
+        }
+        customer = { positivePct: positivePct != null ? Math.round(positivePct) : null, responses: totalResponses };
+      } catch {
+        customer = { positivePct: null, responses: totalResponses };
+      }
+    }
+
+    // Strengths/risks from the same category averages the dashboard shows.
+    const cats = CATEGORY_LABELS
+      .map((c) => ({ label: c.label, pct: ((a[c.key] || 0) / 50) * 100 }))
+      .filter((c) => c.pct > 0)
+      .sort((x, y) => y.pct - x.pct);
+    const strengths = cats.slice(0, 3).filter((c) => c.pct >= 55).map((c) => `Strong ${c.label.toLowerCase()}`);
+    const risks = cats.slice(-2).filter((c) => c.pct < 55).map((c) => `${c.label} needs strengthening`);
+    const riskLevel = this.dominantRiskLevel(a.riskSummary);
+
+    const recommendation =
+      validationCount === 0 ? 'VALIDATION IN PROGRESS'
+      : overallScore >= 70 ? 'CONTINUE — STRONG SIGNAL'
+      : overallScore >= 40 ? 'IMPROVE & RE-VALIDATE'
+      : 'HIGH RISK — RECONSIDER';
+
+    return {
+      title: idea.title,
+      industryCategory: idea.industryCategory,
+      stage: idea.stage,
+      version: idea.version,
+      status: validationCount >= 3 ? 'VALIDATED' : 'VALIDATION IN PROGRESS',
+      submittedAt: idea.submittedAt,
+      problem: settings.showProblem ? idea.problemStatement : null,
+      solution: settings.showSolution ? idea.solutionDescription : null,
+      scores: settings.showScores
+        ? {
+            overall: overallScore,
+            expert: overallScore,
+            customerPositivePct: customer?.positivePct ?? null,
+            riskLevel,
+          }
+        : null,
+      counts: settings.showCounts
+        ? { validators: validationCount, responses: totalResponses }
+        : null,
+      strengths: settings.showStrengthsRisks ? strengths : null,
+      risks: settings.showStrengthsRisks ? risks : null,
+      aiInsight: settings.showAiInsight ? this.extractAiInsight(idea.aiSummary) : null,
+      recommendation,
+    };
+  }
+
+  // ---------- version history ----------
+
+  /**
+   * The whole revision family of an idea: walk up `revisionOf` to the root,
+   * then collect descendants. Chains are short (a founder revises a handful of
+   * times at most), so the loop queries are fine.
+   */
+  async getVersions(ideaId: string, founderId: string) {
+    const start = await this.findOwned(ideaId, founderId);
+
+    let root = start;
+    for (let i = 0; i < 20 && root.revisionOf; i++) {
+      const parent = await this.prisma.idea.findUnique({ where: { id: root.revisionOf } });
+      if (!parent) break;
+      root = parent;
+    }
+
+    const familyIds = new Set<string>([root.id]);
+    let frontier = [root.id];
+    for (let i = 0; i < 20 && frontier.length; i++) {
+      const children = await this.prisma.idea.findMany({
+        where: { revisionOf: { in: frontier } },
+        select: { id: true },
+      });
+      frontier = children.map((c) => c.id).filter((id) => !familyIds.has(id));
+      frontier.forEach((id) => familyIds.add(id));
+    }
+
+    const versions = await this.prisma.idea.findMany({
+      where: { id: { in: [...familyIds] }, founderId },
+      include: {
+        validations: {
+          include: {
+            marketOpportunity: true, feasibility: true, founderFit: true, revenuePotential: true,
+            scalability: true, innovation: true, socialImpact: true,
+          },
+        },
+      },
+      orderBy: { version: 'asc' },
+    });
+
+    return versions.map((v) => {
+      const agg: any = this.aggregateScores(v.validations as any[]);
+      return {
+        id: v.id,
+        version: v.version,
+        title: v.title,
+        createdAt: v.createdAt,
+        paymentStatus: v.paymentStatus,
+        totalValidations: v.validations.length,
+        overallScore: v.validations.length ? Math.round(agg.overallScore || 0) : null,
+        isCurrent: v.id === ideaId,
+      };
+    });
   }
 }

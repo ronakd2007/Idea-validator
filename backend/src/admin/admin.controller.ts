@@ -1,14 +1,32 @@
-import { Controller, Get, Patch, Delete, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Query, Body, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { AdminService } from './admin.service';
+import { ViewAsService } from '../auth/view-as.service';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
 export class AdminController {
-  constructor(private adminService: AdminService) {}
+  constructor(private adminService: AdminService, private viewAsService: ViewAsService) {}
+
+  // ---------- View as User ----------
+  // Both routes live under /admin, where identity substitution never applies:
+  // req.user here is always the REAL admin, even if a stale X-View-As header
+  // is still attached.
+
+  // 'view-as/end' MUST be declared before 'view-as/:userId' — Nest matches in
+  // declaration order, and the param route would otherwise swallow "end".
+  @Post('view-as/end')
+  endViewAs(@Request() req, @Body() body: { targetUserId?: string }) {
+    return this.viewAsService.end(req.user.userId, body?.targetUserId || '');
+  }
+
+  @Post('view-as/:userId')
+  startViewAs(@Param('userId') userId: string, @Request() req) {
+    return this.viewAsService.start(req.user.userId, userId);
+  }
 
   @Get('analytics')
   getAnalytics() {
@@ -43,6 +61,12 @@ export class AdminController {
   @Delete('ideas/:id')
   deleteIdea(@Param('id') id: string, @Request() req) {
     return this.adminService.deleteIdea(id, req.user.userId);
+  }
+
+  // Bypasses the 48h dashboard gate for one idea (and toggles back off).
+  @Patch('ideas/:id/toggle-dashboard-unlock')
+  toggleIdeaDashboardUnlock(@Param('id') id: string, @Request() req) {
+    return this.adminService.toggleIdeaDashboardUnlock(id, req.user.userId);
   }
 
   @Patch('users/:id/toggle-status')
