@@ -108,36 +108,6 @@ export class AdminService {
   }
 
   /**
-   * Admin override for the 48-hour dashboard gate on a single idea — used when
-   * a founder needs their results early (support request, demo, live pitch).
-   * Toggling it off restores the normal timer rather than hiding results that
-   * the timer would already have released.
-   */
-  async toggleIdeaDashboardUnlock(ideaId: string, adminId: string) {
-    const idea = await this.prisma.idea.findUnique({
-      where: { id: ideaId },
-      select: { id: true, title: true, founderId: true, dashboardUnlockedAt: true },
-    });
-    if (!idea) throw new NotFoundException('Idea not found');
-
-    const unlocking = idea.dashboardUnlockedAt == null;
-    const updated = await this.prisma.idea.update({
-      where: { id: ideaId },
-      data: { dashboardUnlockedAt: unlocking ? new Date() : null },
-      select: { id: true, dashboardUnlockedAt: true },
-    });
-
-    await this.logAdmin(
-      adminId,
-      unlocking ? 'ADMIN_DASHBOARD_UNLOCKED' : 'ADMIN_DASHBOARD_RELOCKED',
-      { type: 'IDEA', id: idea.id, label: idea.title },
-      { ideaId: idea.id }
-    );
-
-    return { dashboardUnlockedAt: updated.dashboardUnlockedAt };
-  }
-
-  /**
    * Hard-deletes a user and everything they ever touched. Irreversible by
    * design — this is the "erase all history" action, not a soft deactivate.
    *

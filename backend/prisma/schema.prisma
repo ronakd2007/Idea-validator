@@ -78,6 +78,9 @@ model Idea {
   // Admin override for the 48h dashboard gate. Set = results are visible now,
   // regardless of the timer. Only an ADMIN route can write this; a founder can
   // never unlock their own idea early.
+  // RETIRED (2026-08-13): the 48h dashboard gate was removed entirely — the
+  // dashboard is available immediately. Column kept only because dropping it
+  // would need a destructive migration; nothing reads or writes it anymore.
   dashboardUnlockedAt DateTime?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt

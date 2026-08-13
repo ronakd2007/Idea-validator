@@ -98,43 +98,6 @@ export default function IdeaDashboardPage() {
   if (loading) return <div className="flex items-center justify-center min-h-screen"><div className="text-slate-500">Loading dashboard...</div></div>;
   if (error) return <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error}</div></div>;
 
-  // Locked state: the server withholds all validation data for 48h after
-  // payment — this renders the countdown plus how many experts reviewed so far.
-  if (data && data.available === false) {
-    const totalMs = 48 * 60 * 60 * 1000;
-    const remainingMs = Math.max(0, new Date(data.unlockAt).getTime() - Date.now());
-    const hoursLeft = Math.ceil(remainingMs / (60 * 60 * 1000));
-    const pctElapsed = Math.min(100, Math.round(((totalMs - remainingMs) / totalMs) * 100));
-    const received = data.validationCount ?? 0;
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-10 w-full max-w-lg text-center">
-          <div className="text-5xl mb-4">⏳</div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Validation in progress</h2>
-          <p className="text-slate-500 mb-6">
-            Experts are reviewing <span className="font-medium text-slate-700">{data.idea?.title}</span>.
-            Your dashboard unlocks in about <span className="font-semibold text-slate-700">{hoursLeft}h</span>.
-          </p>
-          <div className="mb-2 flex justify-between text-sm text-slate-500">
-            <span>48-hour validation window</span>
-            <span>{pctElapsed}%</span>
-          </div>
-          <div className="w-full bg-slate-100 rounded-full h-3 mb-4">
-            <div className="bg-blue-600 h-3 rounded-full transition-all" style={{ width: `${pctElapsed}%` }} />
-          </div>
-          <p className="text-sm text-slate-500 mb-8">
-            {received > 0
-              ? `${received} expert validation${received !== 1 ? 's' : ''} received so far.`
-              : 'Experts have been notified — validations will appear here.'}
-          </p>
-          <Link href="/founder/ideas" className="inline-block bg-blue-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-blue-700">
-            Back to My Ideas
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
   const { idea, aggregated } = data || {};
   const a = aggregated || {};
 

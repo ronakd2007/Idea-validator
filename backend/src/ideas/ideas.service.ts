@@ -119,27 +119,15 @@ export class IdeasService {
     return idea;
   }
 
-  // The dashboard unlocks 48 hours after payment completes (that's when
-  // validators can first see the idea), falling back to submission time for
-  // anything without a completed payment. Purely time-based by design — the
-  // validation count is reported while locked but never unlocks early.
-  private static readonly UNLOCK_AFTER_HOURS = 48;
-
-  // Two deliberate escape hatches, neither reachable by a founder:
-  //  - DASHBOARD_GATE_BYPASS=true disables the timer for the whole server
-  //    (local development and demos — never set this in production).
-  //  - Idea.dashboardUnlockedAt is an admin-only per-idea override.
-  private get gateBypassed() {
-    return process.env.DASHBOARD_GATE_BYPASS === 'true';
-  }
-
+  // The dashboard is available immediately after submission — the 48-hour
+  // unlock gate (and its env/admin overrides) was removed by explicit product
+  // decision on 2026-08-13. Validations simply appear as they arrive.
   async getDashboard(ideaId: string, founderId: string) {
     const idea = await this.prisma.idea.findUnique({
       where: { id: ideaId },
       include: {
         founder: { select: { id: true, name: true } },
         selfAssessment: true,
-        payments: { where: { status: 'COMPLETED' }, orderBy: { createdAt: 'asc' }, take: 1 },
         validations: {
           include: {
             validator: { select: { id: true, name: true, email: true, phone: true, validatorProfile: true } },
@@ -163,22 +151,6 @@ export class IdeasService {
 
     if (!idea) throw new NotFoundException('Idea not found');
     if (idea.founderId !== founderId) throw new ForbiddenException('Access denied');
-
-    const liveSince = idea.payments[0]?.createdAt ?? idea.submittedAt;
-    const unlockAt = new Date(liveSince.getTime() + IdeasService.UNLOCK_AFTER_HOURS * 60 * 60 * 1000);
-    const unlocked =
-      this.gateBypassed || idea.dashboardUnlockedAt != null || Date.now() >= unlockAt.getTime();
-
-    if (!unlocked) {
-      // Locked: return progress only — never the validations themselves, so
-      // the gate can't be bypassed by reading the raw response.
-      return {
-        available: false,
-        unlockAt,
-        validationCount: idea.validations.length,
-        idea: { id: idea.id, title: idea.title, submittedAt: idea.submittedAt },
-      };
-    }
 
     const { label, role } = await this.actor(founderId);
     void this.activity.log({

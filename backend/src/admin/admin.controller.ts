@@ -63,12 +63,6 @@ export class AdminController {
     return this.adminService.deleteIdea(id, req.user.userId);
   }
 
-  // Bypasses the 48h dashboard gate for one idea (and toggles back off).
-  @Patch('ideas/:id/toggle-dashboard-unlock')
-  toggleIdeaDashboardUnlock(@Param('id') id: string, @Request() req) {
-    return this.adminService.toggleIdeaDashboardUnlock(id, req.user.userId);
-  }
-
   @Patch('users/:id/toggle-status')
   toggleUserStatus(@Param('id') id: string, @Request() req) {
     return this.adminService.toggleUserStatus(id, req.user.userId);

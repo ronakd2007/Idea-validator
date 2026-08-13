@@ -167,7 +167,6 @@ export const api = {
   rejectValidator: (id: string) => request(`/admin/validators/${id}/reject`, { method: 'PATCH' }),
   getAdminIdeas: () => request('/admin/ideas'),
   deleteIdea: (id: string) => request(`/admin/ideas/${id}`, { method: 'DELETE' }),
-  toggleIdeaDashboardUnlock: (id: string) => request(`/admin/ideas/${id}/toggle-dashboard-unlock`, { method: 'PATCH' }),
 
   // Admin — View as User
   startViewAs: (userId: string) => request(`/admin/view-as/${userId}`, { method: 'POST' }),

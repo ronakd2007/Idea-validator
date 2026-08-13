@@ -98,11 +98,10 @@ export default function TutorialPage() {
               innovation, social impact, customer validation, a Shark-Tank-style score and a startup success formula —
               plus written feedback on your biggest strength, biggest weakness and one concrete improvement.
             </Step>
-            <Step n={5} title="Your dashboard unlocks">
-              Results unlock <strong>48 hours after submission</strong> — you&apos;ll see a live countdown with how many
-              experts have already reviewed until then. Then: an overall score out of 100, per-framework scores out of
-              50, a radar chart, a risk heatmap, every expert&apos;s written feedback, and which experts opted in to be
-              contacted by you.
+            <Step n={5} title="Watch results arrive on your dashboard">
+              Your dashboard is available <strong>immediately</strong> — expert validations appear as they come in.
+              You get an overall score out of 100, per-framework scores out of 50, a radar chart, a risk heatmap,
+              every expert&apos;s written feedback, and which experts opted in to be contacted by you.
             </Step>
             <Step n={6} title="Read the AI summary and download the report">
               One click generates an honest AI analysis of all the scores and feedback — verdict, what&apos;s working, what
@@ -203,7 +202,7 @@ export default function TutorialPage() {
           {[
             {
               q: 'When do I see my results?',
-              a: 'Your dashboard unlocks 48 hours after submission. Until then it shows a countdown and exactly how many experts have already reviewed your idea.',
+              a: 'Immediately — your dashboard opens as soon as your idea is submitted, and expert validations appear on it as they come in.',
             },
             {
               q: 'What do the scores mean?',
