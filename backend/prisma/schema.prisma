@@ -405,7 +405,10 @@ model SurveyResponse {
   survey          Survey        @relation(fields: [surveyId], references: [id], onDelete: Cascade)
   sessionId       String        @unique
   session         SurveySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  respondentEmail String? // only populated if the founder enabled "collect email" — no verified/authenticated identity in Phase 2
+  respondentEmail String? // only populated if the founder enabled "collect email"
+  // true when the email came from a server-verified Google sign-in on the
+  // public form (Google-Forms-style auto capture) rather than manual typing.
+  respondentEmailVerified Boolean @default(false)
   submittedAt     DateTime      @default(now())
   createdAt       DateTime      @default(now())
 

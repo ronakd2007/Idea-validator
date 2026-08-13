@@ -1,11 +1,36 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { randomBytes, createHash } from 'crypto';
+import { OAuth2Client } from 'google-auth-library';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
 
 @Injectable()
 export class PublicSurveyService {
+  private googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
   constructor(private prisma: PrismaService, private activity: ActivityService) {}
+
+  /**
+   * Google-Forms-style verified email capture: the public form hands us the
+   * Google Identity Services credential, and the EMAIL IS TAKEN FROM THE
+   * VERIFIED TOKEN — never from anything the client typed. No account is
+   * created or linked; this is identity attestation for one survey response.
+   */
+  private async verifyRespondentGoogle(credential: string): Promise<string> {
+    try {
+      const ticket = await this.googleClient.verifyIdToken({
+        idToken: credential,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+      const payload = ticket.getPayload();
+      if (!payload?.email || !payload.email_verified) throw new Error('unverified');
+      return payload.email;
+    } catch {
+      throw new BadRequestException(
+        'Google sign-in could not be verified — try signing in again, or enter your email manually.'
+      );
+    }
+  }
 
   /**
    * Respondent activity is recorded with NO userId and NO session token — a
@@ -210,7 +235,8 @@ export class PublicSurveyService {
     publicId: string,
     sessionToken: string,
     rawAnswers: { questionId: string; value: any }[],
-    respondentEmail?: string
+    respondentEmail?: string,
+    googleCredential?: string
   ) {
     const survey = await this.loadByPublicId(publicId);
     if (survey.status !== 'LIVE') throw new BadRequestException('This survey is no longer accepting responses');
@@ -223,14 +249,23 @@ export class PublicSurveyService {
     if (!session || session.surveyId !== survey.id) throw new BadRequestException('Invalid or expired session');
     if (session.completed) throw new ConflictException('This session has already submitted a response');
 
-    // When the founder enabled "collect email addresses", a valid email is
-    // required — Google-Forms style. The public form enforces this too; this
-    // is the server-side guarantee.
+    // When the founder enabled "collect email addresses", an email is required
+    // — Google-Forms style. Preferred path: a Google credential, verified
+    // server-side, whose email overrides anything typed. Fallback: a manually
+    // entered address, format-checked.
+    let email: string | null = null;
+    let emailVerified = false;
     if (survey.collectEmail) {
-      const mail = (respondentEmail || '').trim();
-      if (!mail) throw new BadRequestException('Your email is required to submit this survey.');
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mail)) {
-        throw new BadRequestException('Enter a valid email address, e.g. you@example.com.');
+      if (googleCredential) {
+        email = await this.verifyRespondentGoogle(googleCredential);
+        emailVerified = true;
+      } else {
+        const mail = (respondentEmail || '').trim();
+        if (!mail) throw new BadRequestException('Your email is required to submit this survey.');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mail)) {
+          throw new BadRequestException('Enter a valid email address, e.g. you@example.com.');
+        }
+        email = mail;
       }
     }
 
@@ -245,7 +280,8 @@ export class PublicSurveyService {
         data: {
           surveyId: survey.id,
           sessionId: session.id,
-          respondentEmail: survey.collectEmail && respondentEmail ? respondentEmail.trim() : null,
+          respondentEmail: email,
+          respondentEmailVerified: emailVerified,
         },
       });
 

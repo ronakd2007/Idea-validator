@@ -643,6 +643,7 @@ export class SurveyAnalyticsService {
       submittedAt: r.submittedAt,
       startedAt: r.session?.startedAt ?? null,
       respondentEmail: r.respondentEmail,
+      respondentEmailVerified: (r as any).respondentEmailVerified ?? false,
       duration: r.session ? this.durationSeconds(r.session) : null,
       quality: r.quality,
       answers: r.answers.map((a: any) => ({ questionId: a.questionId, value: a.value })),
@@ -658,7 +659,10 @@ export class SurveyAnalyticsService {
     );
     const qualityMap = this.computeQuality(survey.questions, survey.responses, medianDuration);
 
-    const headers = ['Response ID', 'Survey Version', 'Submitted At', 'Duration (s)', 'Quality', ...survey.questions.map((q) => `${q.questionText} [${q.type}]`)];
+    // Email columns only exist when the survey actually collects emails, so
+    // anonymous-survey exports stay exactly as before.
+    const emailCols = survey.collectEmail ? ['Respondent Email', 'Email Verified'] : [];
+    const headers = ['Response ID', 'Survey Version', 'Submitted At', 'Duration (s)', 'Quality', ...emailCols, ...survey.questions.map((q) => `${q.questionText} [${q.type}]`)];
     const escape = (v: any) => {
       let s = v == null ? '' : String(v);
       // Formula-injection guard: respondent text starting with =, +, -, @ or a
@@ -678,7 +682,10 @@ export class SurveyAnalyticsService {
         if (['MULTIPLE_CHOICE', 'DROPDOWN', 'IMAGE_CHOICE'].includes(q.type)) return q.options.find((o: any) => o.id === v)?.label || v;
         return v;
       });
-      return [r.id, survey.versionNumber, new Date(r.submittedAt).toISOString(), duration != null ? Math.round(duration) : '', quality, ...answerCells];
+      const emailCells = survey.collectEmail
+        ? [r.respondentEmail || '', (r as any).respondentEmailVerified ? 'Yes (Google)' : r.respondentEmail ? 'No (typed)' : '']
+        : [];
+      return [r.id, survey.versionNumber, new Date(r.submittedAt).toISOString(), duration != null ? Math.round(duration) : '', quality, ...emailCells, ...answerCells];
     });
 
     return [headers, ...rows].map((row) => row.map(escape).join(',')).join('\n');

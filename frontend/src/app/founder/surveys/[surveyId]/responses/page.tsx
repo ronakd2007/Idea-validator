@@ -159,7 +159,14 @@ function SurveyResponsesInner() {
                 </div>
 
                 {selected.respondentEmail && (
-                  <p className="text-xs text-slate-500 mb-4">Respondent email: <span className="text-slate-700">{selected.respondentEmail}</span></p>
+                  <p className="text-xs text-slate-500 mb-4">
+                    Respondent email: <span className="text-slate-700">{selected.respondentEmail}</span>
+                    {selected.respondentEmailVerified ? (
+                      <span className="ml-1.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-full">✓ Verified via Google</span>
+                    ) : (
+                      <span className="ml-1.5 text-[10px] font-medium bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">typed, unverified</span>
+                    )}
+                  </p>
                 )}
 
                 <div className="space-y-5 mb-5">

@@ -28,9 +28,14 @@ export class PublicSurveyController {
   @Post(':publicId/responses')
   submit(
     @Param('publicId') publicId: string,
-    @Body() body: { sessionToken: string; answers: { questionId: string; value: any }[]; respondentEmail?: string }
+    @Body() body: {
+      sessionToken: string;
+      answers: { questionId: string; value: any }[];
+      respondentEmail?: string;
+      googleCredential?: string; // Google-Forms-style verified email capture
+    }
   ) {
-    return this.publicSurveyService.submit(publicId, body.sessionToken, body.answers, body.respondentEmail);
+    return this.publicSurveyService.submit(publicId, body.sessionToken, body.answers, body.respondentEmail, body.googleCredential);
   }
 
   @Throttle({ default: { limit: 5, ttl: 60_000 } })

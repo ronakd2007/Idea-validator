@@ -505,7 +505,7 @@ function SurveyBuilderInner() {
                   />
                   <span>
                     <span className="block text-sm font-medium text-slate-800">Collect email addresses</span>
-                    <span className="block text-xs text-slate-500 mt-0.5">Respondents must enter their email to submit — recorded with each response.</span>
+                    <span className="block text-xs text-slate-500 mt-0.5">Like Google Forms: respondents sign in with Google (auto-captured &amp; verified) or type their email — recorded with each response.</span>
                   </span>
                 </label>
               </div>

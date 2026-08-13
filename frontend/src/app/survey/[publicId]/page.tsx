@@ -4,6 +4,19 @@ import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { PublicSurvey, publicSurveyFromServer } from '@/lib/surveyTypes';
 import QuestionPreview from '@/components/survey/QuestionPreview';
+import GoogleSignInButton from '@/components/GoogleSignInButton';
+
+// Display-only decode of the Google credential's email — the backend NEVER
+// trusts this; it re-verifies the token's signature and takes the email from
+// the verified payload.
+function emailFromCredential(credential: string): string | null {
+  try {
+    const payload = credential.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(payload)).email || null;
+  } catch {
+    return null;
+  }
+}
 
 type PageState = 'loading' | 'not_found' | 'closed' | 'limit_reached' | 'submitted' | 'ready' | 'error';
 
@@ -25,6 +38,10 @@ export default function PublicSurveyPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState('');
+  // Google-Forms-style verified capture: credential from Google Identity
+  // Services, displayed as "Responding as X", sent with the submission.
+  const [googleCredential, setGoogleCredential] = useState<string | null>(null);
+  const [googleEmail, setGoogleEmail] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [incentiveName, setIncentiveName] = useState('');
@@ -130,10 +147,11 @@ export default function PublicSurveyPage() {
     }
 
     // When the founder chose "collect email addresses", it works like Google
-    // Forms: a valid email is required before the response can be submitted.
-    if (survey.collectEmail) {
+    // Forms: a Google sign-in captures the email automatically (verified);
+    // otherwise a manually typed, valid email is required.
+    if (survey.collectEmail && !googleCredential) {
       if (!email.trim()) {
-        setEmailError('Your email is required to submit this survey.');
+        setEmailError('Sign in with Google above, or type your email — it is required to submit this survey.');
         document.getElementById('respondent-email')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
@@ -151,7 +169,8 @@ export default function PublicSurveyPage() {
       await api.submitPublicSurveyResponse(publicId, {
         sessionToken,
         answers: survey.questions.map((q) => ({ questionId: q.id, value: answers[q.id] ?? null })),
-        respondentEmail: survey.collectEmail ? email.trim() : undefined,
+        respondentEmail: survey.collectEmail && !googleCredential ? email.trim() : undefined,
+        googleCredential: survey.collectEmail && googleCredential ? googleCredential : undefined,
       });
       localStorage.setItem(submittedKey(publicId), 'true');
       localStorage.removeItem(sessionKey(publicId));
@@ -292,6 +311,58 @@ export default function PublicSurveyPage() {
           )}
         </div>
 
+        {/* Google-Forms-style identity block: sits at the top of the form,
+            shows exactly which account will be recorded, and offers a switch —
+            mirroring the familiar "responding as X" banner. */}
+        {survey.collectEmail && (
+          <div id="respondent-email" className="bg-white border border-slate-200 rounded-xl shadow-sm p-5 mb-4">
+            {googleEmail ? (
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <p className="text-sm text-slate-900 font-medium truncate">
+                    {googleEmail}
+                    <span className="ml-2 text-[10px] font-semibold bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-full align-middle">✓ Google</span>
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">✉ Your email will be recorded with your response when you submit.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setGoogleCredential(null); setGoogleEmail(null); }}
+                  className="text-xs text-blue-600 hover:underline font-medium shrink-0"
+                >
+                  Switch account
+                </button>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-slate-800 mb-0.5">This survey collects email addresses</p>
+                <p className="text-xs text-slate-500 mb-3">Your email is recorded with your response. Sign in with Google to fill it automatically, or type it below.</p>
+                <GoogleSignInButton
+                  text="continue_with"
+                  onCredential={(credential) => {
+                    setGoogleCredential(credential);
+                    setGoogleEmail(emailFromCredential(credential));
+                    setEmailError('');
+                  }}
+                />
+                <div className="flex items-center gap-3 my-3">
+                  <div className="flex-1 h-px bg-slate-200" />
+                  <span className="text-[10px] text-slate-400 uppercase">or</span>
+                  <div className="flex-1 h-px bg-slate-200" />
+                </div>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); setEmailError(''); }}
+                  placeholder="you@example.com"
+                  className={`w-full border rounded-lg px-3 py-2.5 text-sm text-slate-700 focus:outline-none ${emailError ? 'border-red-400 bg-red-50' : 'border-slate-200 focus:border-blue-500'}`}
+                />
+                {emailError && <p className="text-xs text-red-600 mt-1 font-medium">{emailError}</p>}
+              </>
+            )}
+          </div>
+        )}
+
         <div className="space-y-4">
           {survey.questions.map((q, i) => (
             <div key={q.id} id={`q-${q.id}`}>
@@ -299,21 +370,6 @@ export default function PublicSurveyPage() {
             </div>
           ))}
         </div>
-
-        {survey.collectEmail && (
-          <div id="respondent-email" className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mt-4">
-            <label className="block text-sm font-medium text-slate-700 mb-1">Your email <span className="text-red-500">*</span></label>
-            <p className="text-xs text-slate-500 mb-2">This survey collects email addresses — your email is recorded with your response.</p>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => { setEmail(e.target.value); setEmailError(''); }}
-              placeholder="you@example.com"
-              className={`w-full border rounded-lg px-3 py-2.5 text-sm text-slate-700 focus:outline-none ${emailError ? 'border-red-400 bg-red-50' : 'border-slate-200 focus:border-blue-500'}`}
-            />
-            {emailError && <p className="text-xs text-red-600 mt-1 font-medium">{emailError}</p>}
-          </div>
-        )}
 
         {submitError && <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-3 text-sm mt-4">{submitError}</div>}
 
