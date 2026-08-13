@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { FieldErrors, fieldClass, isEmail, isPhone, isUrl, requireText, scrollToFirstError, summaryMessage } from '@/lib/formValidation';
 
 const CONTACT_OPTIONS = [
   { value: 'BETA_TESTING', label: 'Beta Testing' },
@@ -34,8 +35,16 @@ export default function RegisterValidatorPage() {
     }));
   };
 
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const clearFieldError = (key: string) =>
+    setFieldErrors(prev => (prev[key] ? Object.fromEntries(Object.entries(prev).filter(([k]) => k !== key)) : prev));
+
   const sendOtp = async () => {
-    if (!form.phone || form.phone.length < 7) { setError('Enter a valid phone number'); return; }
+    if (!isPhone(form.phone)) {
+      setFieldErrors(prev => ({ ...prev, phone: 'Enter a valid phone number with country code, e.g. +91 9876543210.' }));
+      return;
+    }
+    clearFieldError('phone');
     setError('');
     setOtpLoading(true);
     try {
@@ -49,11 +58,41 @@ export default function RegisterValidatorPage() {
     }
   };
 
+  // Rules mirror the backend RegisterValidatorDto — nothing that passes here
+  // can bounce off the server with a raw validation error.
+  const validate = (): boolean => {
+    const errors: FieldErrors = {};
+    const name = requireText(form.name, 'Full name', 2);
+    if (name) errors.name = name;
+    if (!form.email.trim()) errors.email = 'Email address is required.';
+    else if (!isEmail(form.email)) errors.email = 'Enter a valid email address, e.g. you@example.com.';
+    const pw = requireText(form.password, 'Password', 8);
+    if (pw) errors.password = pw;
+    const occ = requireText(form.occupation, 'Occupation', 2);
+    if (occ) errors.occupation = occ;
+    if (!isPhone(form.phone)) errors.phone = 'Enter a valid phone number with country code, e.g. +91 9876543210.';
+    else if (!otpSent) errors.phone = 'Click "Send OTP" to verify this phone number first.';
+    if (otpSent && form.otp.trim().length < 4) errors.otp = 'Enter the OTP shown above (at least 4 digits).';
+    if (form.yearsOfExperience < 0 || form.yearsOfExperience > 60 || Number.isNaN(form.yearsOfExperience)) {
+      errors.yearsOfExperience = 'Years of experience must be between 0 and 60.';
+    }
+    if (!form.linkedinUrl.trim()) errors.linkedinUrl = 'LinkedIn profile URL is required — the admin reviews it to approve you.';
+    else if (!isUrl(form.linkedinUrl)) errors.linkedinUrl = 'Enter a full URL starting with https://, e.g. https://linkedin.com/in/yourname.';
+    if (form.areasOfExpertise.length === 0) errors.areasOfExpertise = 'Select at least one area of expertise.';
+
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setError(summaryMessage(errors));
+      scrollToFirstError(errors);
+      return false;
+    }
+    setError('');
+    return true;
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (form.areasOfExpertise.length === 0) { setError('Select at least one area of expertise'); return; }
-    if (!otpSent) { setError('Please verify your phone number first'); return; }
-    setError('');
+    if (!validate()) return;
     setLoading(true);
     try {
       await api.registerValidator(form);
@@ -89,7 +128,7 @@ export default function RegisterValidatorPage() {
 
         {error && <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-3 mb-4 text-sm">{error}</div>}
 
-        <form onSubmit={submit} className="space-y-5">
+        <form noValidate onSubmit={submit} className="space-y-5">
           <div className="grid md:grid-cols-2 gap-4">
             {[
               { key: 'name', label: 'Full Name', type: 'text' },
@@ -97,31 +136,34 @@ export default function RegisterValidatorPage() {
               { key: 'password', label: 'Password', type: 'password' },
               { key: 'occupation', label: 'Occupation / Job Title', type: 'text' },
             ].map(f => (
-              <div key={f.key}>
+              <div key={f.key} id={`field-${f.key}`}>
                 <label className="block text-sm font-medium text-slate-700 mb-1">{f.label}</label>
-                <input type={f.type} required
-                  className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                <input type={f.type}
+                  className={`w-full border rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 ${fieldClass(!!fieldErrors[f.key])}`}
                   value={(form as any)[f.key]}
-                  onChange={e => setForm({ ...form, [f.key]: e.target.value })} />
+                  onChange={e => { setForm({ ...form, [f.key]: e.target.value }); clearFieldError(f.key); }} />
+                {fieldErrors[f.key] && <p className="text-xs text-red-600 mt-1 font-medium">{fieldErrors[f.key]}</p>}
               </div>
             ))}
           </div>
 
           {/* Phone + OTP */}
-          <div>
+          <div id="field-phone">
             <label className="block text-sm font-medium text-slate-700 mb-1">Mobile Number *</label>
             <div className="flex gap-2">
-              <input type="tel" required placeholder="+91 9876543210"
-                className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              <input type="tel" placeholder="+91 9876543210"
+                className={`flex-1 border rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 ${fieldClass(!!fieldErrors.phone)}`}
                 value={form.phone}
-                onChange={e => { setForm({ ...form, phone: e.target.value }); setOtpSent(false); setTestOtp(''); }} />
+                onChange={e => { setForm({ ...form, phone: e.target.value }); setOtpSent(false); setTestOtp(''); clearFieldError('phone'); }} />
               <button type="button" onClick={sendOtp} disabled={otpLoading || otpSent}
                 className="px-4 py-2 text-sm font-semibold rounded-lg border transition whitespace-nowrap
                   bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
                 {otpLoading ? 'Sending...' : otpSent ? 'OTP Sent ✓' : 'Send OTP'}
               </button>
             </div>
-            <p className="text-xs text-slate-500 mt-1">Required. Shared with founders when you submit a validation, so they can follow up with you directly.</p>
+            {fieldErrors.phone
+              ? <p className="text-xs text-red-600 mt-1 font-medium">{fieldErrors.phone}</p>
+              : <p className="text-xs text-slate-500 mt-1">Required. Shared with founders when you submit a validation, so they can follow up with you directly.</p>}
           </div>
 
           {testOtp && (
@@ -133,44 +175,49 @@ export default function RegisterValidatorPage() {
           )}
 
           {otpSent && (
-            <div>
+            <div id="field-otp">
               <label className="block text-sm font-medium text-slate-700 mb-1">Enter OTP</label>
-              <input type="text" required maxLength={6} placeholder="6-digit OTP"
-                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 tracking-widest text-center text-lg font-bold"
+              <input type="text" maxLength={6} placeholder="6-digit OTP"
+                className={`w-full border rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 tracking-widest text-center text-lg font-bold ${fieldClass(!!fieldErrors.otp)}`}
                 value={form.otp}
-                onChange={e => setForm({ ...form, otp: e.target.value.replace(/\D/g, '') })} />
+                onChange={e => { setForm({ ...form, otp: e.target.value.replace(/\D/g, '') }); clearFieldError('otp'); }} />
+              {fieldErrors.otp && <p className="text-xs text-red-600 mt-1 font-medium">{fieldErrors.otp}</p>}
             </div>
           )}
 
           <div className="grid md:grid-cols-2 gap-4">
-            <div>
+            <div id="field-yearsOfExperience">
               <label className="block text-sm font-medium text-slate-700 mb-1">Years of Experience</label>
-              <input type="number" min={0} max={50} required
-                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              <input type="number" min={0} max={60}
+                className={`w-full border rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 ${fieldClass(!!fieldErrors.yearsOfExperience)}`}
                 value={form.yearsOfExperience}
-                onChange={e => setForm({ ...form, yearsOfExperience: Number(e.target.value) })} />
+                onChange={e => { setForm({ ...form, yearsOfExperience: Number(e.target.value) }); clearFieldError('yearsOfExperience'); }} />
+              {fieldErrors.yearsOfExperience && <p className="text-xs text-red-600 mt-1 font-medium">{fieldErrors.yearsOfExperience}</p>}
             </div>
-            <div>
+            <div id="field-linkedinUrl">
               <label className="block text-sm font-medium text-slate-700 mb-1">LinkedIn Profile URL *</label>
-              <input type="url" required placeholder="https://linkedin.com/in/..."
-                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              <input type="url" placeholder="https://linkedin.com/in/..."
+                className={`w-full border rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 ${fieldClass(!!fieldErrors.linkedinUrl)}`}
                 value={form.linkedinUrl}
-                onChange={e => setForm({ ...form, linkedinUrl: e.target.value })} />
-              <p className="text-xs text-slate-500 mt-1">Required. Shared with founders when you submit a validation.</p>
+                onChange={e => { setForm({ ...form, linkedinUrl: e.target.value }); clearFieldError('linkedinUrl'); }} />
+              {fieldErrors.linkedinUrl
+                ? <p className="text-xs text-red-600 mt-1 font-medium">{fieldErrors.linkedinUrl}</p>
+                : <p className="text-xs text-slate-500 mt-1">Required. Shared with founders when you submit a validation.</p>}
             </div>
           </div>
 
-          <div>
+          <div id="field-areasOfExpertise">
             <label className="block text-sm font-medium text-slate-700 mb-2">Areas of Expertise</label>
             <div className="flex flex-wrap gap-2">
               {EXPERTISE_OPTIONS.map(opt => (
                 <button type="button" key={opt}
-                  onClick={() => toggleArr('areasOfExpertise', opt)}
+                  onClick={() => { toggleArr('areasOfExpertise', opt); clearFieldError('areasOfExpertise'); }}
                   className={`px-3 py-1.5 text-sm rounded-lg border transition ${form.areasOfExpertise.includes(opt) ? 'bg-blue-600 text-white border-blue-600' : 'border-slate-300 text-slate-600 hover:border-blue-400'}`}>
                   {opt}
                 </button>
               ))}
             </div>
+            {fieldErrors.areasOfExpertise && <p className="text-xs text-red-600 mt-1 font-medium">{fieldErrors.areasOfExpertise}</p>}
           </div>
 
           <div>
@@ -187,7 +234,9 @@ export default function RegisterValidatorPage() {
             </div>
           </div>
 
-          <button type="submit" disabled={loading || !otpSent}
+          {/* Not disabled pre-OTP: clicking runs validate(), which names the
+              exact missing fields instead of leaving a dead button. */}
+          <button type="submit" disabled={loading}
             className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 transition disabled:opacity-50">
             {loading ? 'Submitting...' : 'Submit Validator Application'}
           </button>

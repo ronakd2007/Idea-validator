@@ -24,6 +24,7 @@ export default function PublicSurveyPage() {
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [email, setEmail] = useState('');
+  const [emailError, setEmailError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [incentiveName, setIncentiveName] = useState('');
@@ -128,13 +129,29 @@ export default function PublicSurveyPage() {
       return;
     }
 
+    // When the founder chose "collect email addresses", it works like Google
+    // Forms: a valid email is required before the response can be submitted.
+    if (survey.collectEmail) {
+      if (!email.trim()) {
+        setEmailError('Your email is required to submit this survey.');
+        document.getElementById('respondent-email')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
+        setEmailError('Enter a valid email address, e.g. you@example.com.');
+        document.getElementById('respondent-email')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      setEmailError('');
+    }
+
     setSubmitting(true);
     setSubmitError('');
     try {
       await api.submitPublicSurveyResponse(publicId, {
         sessionToken,
         answers: survey.questions.map((q) => ({ questionId: q.id, value: answers[q.id] ?? null })),
-        respondentEmail: survey.collectEmail ? email || undefined : undefined,
+        respondentEmail: survey.collectEmail ? email.trim() : undefined,
       });
       localStorage.setItem(submittedKey(publicId), 'true');
       localStorage.removeItem(sessionKey(publicId));
@@ -284,15 +301,17 @@ export default function PublicSurveyPage() {
         </div>
 
         {survey.collectEmail && (
-          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mt-4">
-            <label className="block text-sm font-medium text-slate-700 mb-2">Your email (optional)</label>
+          <div id="respondent-email" className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mt-4">
+            <label className="block text-sm font-medium text-slate-700 mb-1">Your email <span className="text-red-500">*</span></label>
+            <p className="text-xs text-slate-500 mb-2">This survey collects email addresses — your email is recorded with your response.</p>
             <input
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => { setEmail(e.target.value); setEmailError(''); }}
               placeholder="you@example.com"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:outline-none"
+              className={`w-full border rounded-lg px-3 py-2.5 text-sm text-slate-700 focus:outline-none ${emailError ? 'border-red-400 bg-red-50' : 'border-slate-200 focus:border-blue-500'}`}
             />
+            {emailError && <p className="text-xs text-red-600 mt-1 font-medium">{emailError}</p>}
           </div>
         )}
 

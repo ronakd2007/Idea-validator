@@ -46,8 +46,11 @@ export default function MySurveysPage() {
   };
 
   // A survey never requires an Idea — the idea link below is purely optional.
+  const [titleError, setTitleError] = useState('');
+
   const createSurvey = async () => {
-    if (!newTitle.trim()) return;
+    if (!newTitle.trim()) { setTitleError('Give your survey a title before creating it.'); return; }
+    setTitleError('');
     setCreating(true);
     try {
       const survey = await api.createSurvey({ ideaId: selectedIdeaId || undefined, title: newTitle.trim(), description: '' });
@@ -142,11 +145,12 @@ export default function MySurveysPage() {
             <input
               type="text"
               value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
+              onChange={(e) => { setNewTitle(e.target.value); setTitleError(''); }}
               placeholder="e.g. Customer Problem Survey"
               autoFocus
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4"
+              className={`w-full border rounded-lg px-3 py-2 text-sm ${titleError ? 'border-red-400 bg-red-50 mb-1' : 'border-slate-200 mb-4'}`}
             />
+            {titleError && <p className="text-xs text-red-600 mb-3 font-medium">{titleError}</p>}
 
             {ideas.length > 0 && (
               <>
@@ -166,7 +170,7 @@ export default function MySurveysPage() {
 
             <div className="flex justify-end gap-2">
               <button onClick={() => setCreateStep('choice')} disabled={creating} className="text-sm px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-60">Back</button>
-              <button onClick={createSurvey} disabled={!newTitle.trim() || creating} className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-60">
+              <button onClick={createSurvey} disabled={creating} className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-60">
                 {creating ? 'Creating...' : 'Create'}
               </button>
             </div>

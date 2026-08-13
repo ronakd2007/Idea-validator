@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { storeAuth } from '@/lib/auth';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
+import { FieldErrors, fieldClass, isEmail, isPhone, requireText, scrollToFirstError, summaryMessage } from '@/lib/formValidation';
 
 // useSearchParams() requires a Suspense boundary for static prerendering —
 // dev mode never enforces this, only a real `next build` does.
@@ -43,8 +44,16 @@ function RegisterFounderForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const clearFieldError = (key: string) =>
+    setFieldErrors(prev => (prev[key] ? Object.fromEntries(Object.entries(prev).filter(([k]) => k !== key)) : prev));
+
   const sendOtp = async () => {
-    if (!form.phone || form.phone.length < 7) { setError('Enter a valid phone number'); return; }
+    if (!isPhone(form.phone)) {
+      setFieldErrors(prev => ({ ...prev, phone: 'Enter a valid phone number with country code, e.g. +91 9876543210.' }));
+      return;
+    }
+    clearFieldError('phone');
     setError('');
     setOtpLoading(true);
     try {
@@ -58,10 +67,33 @@ function RegisterFounderForm() {
     }
   };
 
+  // Rules mirror the backend RegisterFounderDto — nothing that passes here
+  // can bounce off the server with a raw validation error.
+  const validate = (): boolean => {
+    const errors: FieldErrors = {};
+    const name = requireText(form.name, 'Full name', 2);
+    if (name) errors.name = name;
+    if (!form.email.trim()) errors.email = 'Email address is required.';
+    else if (!isEmail(form.email)) errors.email = 'Enter a valid email address, e.g. you@example.com.';
+    const pw = requireText(form.password, 'Password', 8);
+    if (pw) errors.password = pw;
+    if (!isPhone(form.phone)) errors.phone = 'Enter a valid phone number with country code, e.g. +91 9876543210.';
+    else if (!otpSent) errors.phone = 'Click "Send OTP" to verify this phone number first.';
+    if (otpSent && form.otp.trim().length < 4) errors.otp = 'Enter the OTP shown above (at least 4 digits).';
+
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setError(summaryMessage(errors));
+      scrollToFirstError(errors);
+      return false;
+    }
+    setError('');
+    return true;
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otpSent) { setError('Please verify your phone number first'); return; }
-    setError('');
+    if (!validate()) return;
     setLoading(true);
     try {
       const res = await api.registerFounder(form);
@@ -105,36 +137,41 @@ function RegisterFounderForm() {
           <div className="flex-1 h-px bg-slate-200" />
         </div>
 
-        <form onSubmit={submit} className="space-y-4">
+        <form noValidate onSubmit={submit} className="space-y-4">
           {[
-            { key: 'name', label: 'Full Name', type: 'text' },
-            { key: 'email', label: 'Email Address', type: 'email' },
-            { key: 'password', label: 'Password', type: 'password' },
+            { key: 'name', label: 'Full Name', type: 'text', hint: undefined },
+            { key: 'email', label: 'Email Address', type: 'email', hint: undefined },
+            { key: 'password', label: 'Password', type: 'password', hint: 'At least 8 characters.' },
           ].map(f => (
-            <div key={f.key}>
+            <div key={f.key} id={`field-${f.key}`}>
               <label className="block text-sm font-medium text-slate-700 mb-1">{f.label}</label>
-              <input type={f.type} required
-                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              <input type={f.type}
+                className={`w-full border rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 ${fieldClass(!!fieldErrors[f.key])}`}
                 value={(form as any)[f.key]}
-                onChange={e => setForm({ ...form, [f.key]: e.target.value })} />
+                onChange={e => { setForm({ ...form, [f.key]: e.target.value }); clearFieldError(f.key); }} />
+              {fieldErrors[f.key]
+                ? <p className="text-xs text-red-600 mt-1 font-medium">{fieldErrors[f.key]}</p>
+                : f.hint && <p className="text-xs text-slate-500 mt-1">{f.hint}</p>}
             </div>
           ))}
 
           {/* Phone + OTP */}
-          <div>
+          <div id="field-phone">
             <label className="block text-sm font-medium text-slate-700 mb-1">Mobile Number *</label>
             <div className="flex gap-2">
-              <input type="tel" required placeholder="+91 9876543210"
-                className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              <input type="tel" placeholder="+91 9876543210"
+                className={`flex-1 border rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 ${fieldClass(!!fieldErrors.phone)}`}
                 value={form.phone}
-                onChange={e => { setForm({ ...form, phone: e.target.value }); setOtpSent(false); setTestOtp(''); }} />
+                onChange={e => { setForm({ ...form, phone: e.target.value }); setOtpSent(false); setTestOtp(''); clearFieldError('phone'); }} />
               <button type="button" onClick={sendOtp} disabled={otpLoading || otpSent}
                 className="px-4 py-2 text-sm font-semibold rounded-lg border transition whitespace-nowrap
                   disabled:opacity-50 bg-blue-600 text-white hover:bg-blue-700 disabled:cursor-not-allowed">
                 {otpLoading ? 'Sending...' : otpSent ? 'OTP Sent ✓' : 'Send OTP'}
               </button>
             </div>
-            <p className="text-xs text-slate-500 mt-1">We will not send unnecessary promotional messages.</p>
+            {fieldErrors.phone
+              ? <p className="text-xs text-red-600 mt-1 font-medium">{fieldErrors.phone}</p>
+              : <p className="text-xs text-slate-500 mt-1">We will not send unnecessary promotional messages.</p>}
           </div>
 
           {/* Test mode OTP display */}
@@ -147,16 +184,20 @@ function RegisterFounderForm() {
           )}
 
           {otpSent && (
-            <div>
+            <div id="field-otp">
               <label className="block text-sm font-medium text-slate-700 mb-1">Enter OTP</label>
-              <input type="text" required maxLength={6} placeholder="6-digit OTP"
-                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 tracking-widest text-center text-lg font-bold"
+              <input type="text" maxLength={6} placeholder="6-digit OTP"
+                className={`w-full border rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 tracking-widest text-center text-lg font-bold ${fieldClass(!!fieldErrors.otp)}`}
                 value={form.otp}
-                onChange={e => setForm({ ...form, otp: e.target.value.replace(/\D/g, '') })} />
+                onChange={e => { setForm({ ...form, otp: e.target.value.replace(/\D/g, '') }); clearFieldError('otp'); }} />
+              {fieldErrors.otp && <p className="text-xs text-red-600 mt-1 font-medium">{fieldErrors.otp}</p>}
             </div>
           )}
 
-          <button type="submit" disabled={loading || !otpSent}
+          {/* Deliberately NOT disabled before OTP verification — clicking runs
+              validate(), which points at exactly what's missing instead of a
+              dead button the user has to puzzle over. */}
+          <button type="submit" disabled={loading}
             className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 transition disabled:opacity-50">
             {loading ? 'Creating account...' : 'Create Founder Account'}
           </button>

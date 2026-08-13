@@ -76,6 +76,7 @@ export default function ValidateIdeaPage() {
   const [sharkTank, setSharkTank] = useState({ problemImportance: 5, marketSize: 5, revenuePotential: 5, executionEase: 5, scalability: 5 });
   const [startupSucc, setStartupSucc] = useState({ founderTeam: 5, marketSize: 5, productDifferentiation: 5, traction: 5, businessModel: 5, competition: 5, timing: 5, fundingReadiness: 5 });
   const [openFeedback, setOpenFeedback] = useState({ biggestStrength: '', biggestWeakness: '', suggestedImprovement: '' });
+  const [feedbackErrors, setFeedbackErrors] = useState<Record<string, string>>({});
 
   const [viewMode, setViewMode] = useState(false);
 
@@ -136,8 +137,22 @@ export default function ValidateIdeaPage() {
       setError('This action is disabled while viewing as another user.');
       return;
     }
-    if (!openFeedback.biggestStrength || !openFeedback.biggestWeakness || !openFeedback.suggestedImprovement) {
-      setError('Please complete the open feedback section'); return;
+    // Field-level checks: name exactly which feedback boxes are missing and
+    // scroll the first one into view rather than one vague banner.
+    const fbLabels: Record<string, string> = {
+      biggestStrength: 'Biggest Strength',
+      biggestWeakness: 'Biggest Weakness',
+      suggestedImprovement: 'One Suggested Improvement',
+    };
+    const fbErrors: Record<string, string> = {};
+    for (const [key, label] of Object.entries(fbLabels)) {
+      if (!(openFeedback as any)[key]?.trim()) fbErrors[key] = `"${label}" is required — a few honest sentences are enough.`;
+    }
+    setFeedbackErrors(fbErrors);
+    if (Object.keys(fbErrors).length > 0) {
+      setError(Object.keys(fbErrors).length === 1 ? 'Please fill the highlighted feedback field.' : `Please fill the ${Object.keys(fbErrors).length} highlighted feedback fields.`);
+      document.getElementById(`field-${Object.keys(fbErrors)[0]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
     }
     setSubmitting(true);
     setError('');
@@ -480,12 +495,16 @@ export default function ValidateIdeaPage() {
                   { key: 'biggestWeakness', label: 'Biggest Weakness', placeholder: 'What is the most significant weakness or risk?' },
                   { key: 'suggestedImprovement', label: 'One Suggested Improvement', placeholder: 'What single change would most improve this idea?' },
                 ].map(f => (
-                  <div key={f.key}>
+                  <div key={f.key} id={`field-${f.key}`}>
                     <label className="block text-sm font-medium text-slate-700 mb-1">{f.label} *</label>
-                    <textarea rows={3} required placeholder={f.placeholder}
-                      className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    <textarea rows={3} placeholder={f.placeholder}
+                      className={`w-full border rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 resize-none ${feedbackErrors[f.key] ? 'border-red-400 focus:ring-red-500 bg-red-50' : 'border-slate-300 focus:ring-blue-500 bg-white'}`}
                       value={(openFeedback as any)[f.key]}
-                      onChange={e => setOpenFeedback({ ...openFeedback, [f.key]: e.target.value })} />
+                      onChange={e => {
+                        setOpenFeedback({ ...openFeedback, [f.key]: e.target.value });
+                        setFeedbackErrors(prev => (prev[f.key] ? Object.fromEntries(Object.entries(prev).filter(([k]) => k !== f.key)) : prev));
+                      }} />
+                    {feedbackErrors[f.key] && <p className="text-xs text-red-600 mt-1 font-medium">{feedbackErrors[f.key]}</p>}
                   </div>
                 ))}
               </div>

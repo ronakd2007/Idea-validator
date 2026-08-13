@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { getStoredUser, isViewMode } from '@/lib/auth';
 import ScoreSelector from '@/components/ScoreSelector';
+import { FieldErrors, fieldClass, isUrl, requireText, scrollToFirstError, summaryMessage } from '@/lib/formValidation';
 
 const STAGES = ['IDEA', 'RESEARCH', 'PROTOTYPE', 'MVP', 'REVENUE_GENERATING'];
 const INDUSTRIES = ['Technology', 'Healthcare', 'Finance', 'Education', 'E-commerce',
@@ -51,13 +52,56 @@ function SubmitIdeaInner() {
 
   const removeTeamMember = (index: number) => setTeamMembers(tm => tm.filter((_, i) => i !== index));
 
-  const validateTeamStep = () => {
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+
+  // Field lengths mirror the backend CreateIdeaDto exactly, so nothing that
+  // passes here can bounce off the server later.
+  const validateIdeaStep = (): boolean => {
+    const errors: FieldErrors = {};
+
+    if (!idea.videoUrl.trim()) errors.videoUrl = 'Pitch video URL is required.';
+    else if (!isUrl(idea.videoUrl)) errors.videoUrl = 'Enter a full video link starting with https:// (YouTube, Loom, Vimeo…).';
+
     const filled = teamMembers.filter(m => m.name.trim() || m.linkedinUrl.trim());
-    if (filled.length === 0) { setError('Add at least one team member with their LinkedIn profile'); return false; }
-    const incomplete = filled.some(m => !m.name.trim() || !m.linkedinUrl.trim());
-    if (incomplete) { setError('Each team member needs both a name and a LinkedIn URL'); return false; }
+    if (filled.length === 0) {
+      errors.team = 'Add at least one team member with their name and LinkedIn profile.';
+    } else {
+      teamMembers.forEach((m, i) => {
+        if (!m.name.trim() && !m.linkedinUrl.trim()) return; // fully empty extra row is fine
+        if (!m.name.trim()) errors[`team-${i}`] = `Team member ${i + 1} is missing a name.`;
+        else if (!m.linkedinUrl.trim()) errors[`team-${i}`] = `Team member ${i + 1} is missing their LinkedIn URL.`;
+        else if (!isUrl(m.linkedinUrl)) errors[`team-${i}`] = `Team member ${i + 1}'s LinkedIn URL must start with https://.`;
+      });
+    }
+
+    const title = requireText(idea.title, 'Idea title', 2);
+    if (title) errors.title = title;
+    const problem = requireText(idea.problemStatement, 'Problem statement', 10);
+    if (problem) errors.problemStatement = problem;
+    const solution = requireText(idea.solutionDescription, 'Solution description', 10);
+    if (solution) errors.solutionDescription = solution;
+    const target = requireText(idea.targetCustomer, 'Target customer', 2);
+    if (target) errors.targetCustomer = target;
+    const revenue = requireText(idea.revenueModel, 'Revenue model', 2);
+    if (revenue) errors.revenueModel = revenue;
+
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setError(summaryMessage(errors));
+      scrollToFirstError(errors);
+      return false;
+    }
     setError('');
     return true;
+  };
+
+  const clearFieldError = (key: string) => {
+    setFieldErrors(prev => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   };
 
   const [viewMode, setViewMode] = useState(false);
@@ -201,43 +245,50 @@ function SubmitIdeaInner() {
 
       {/* Step 1: Idea */}
       {step === 'idea' && (
-        <form onSubmit={e => { e.preventDefault(); if (validateTeamStep()) setStep('assessment'); }} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
-          <div>
+        <form noValidate onSubmit={e => { e.preventDefault(); if (validateIdeaStep()) { setStep('assessment'); window.scrollTo({ top: 0 }); } }} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
+          <div id="field-videoUrl">
             <label className="block text-sm font-medium text-slate-700 mb-1">Pitch Video URL *</label>
-            <input required type="url" placeholder="https://youtube.com/... or https://loom.com/..."
-              className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={idea.videoUrl} onChange={e => setIdea({ ...idea, videoUrl: e.target.value })} />
-            <p className="text-xs text-slate-500 mt-1">A short video (YouTube, Loom, Vimeo) introducing your idea. Validators watch this first.</p>
+            <input type="url" placeholder="https://youtube.com/... or https://loom.com/..."
+              className={`w-full border rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 ${fieldClass(!!fieldErrors.videoUrl)}`}
+              value={idea.videoUrl} onChange={e => { setIdea({ ...idea, videoUrl: e.target.value }); clearFieldError('videoUrl'); }} />
+            {fieldErrors.videoUrl
+              ? <p className="text-xs text-red-600 mt-1 font-medium">{fieldErrors.videoUrl}</p>
+              : <p className="text-xs text-slate-500 mt-1">A short video (YouTube, Loom, Vimeo) introducing your idea. Validators watch this first.</p>}
           </div>
 
-          <div>
+          <div id="field-team">
             <label className="block text-sm font-medium text-slate-700 mb-1">Team *</label>
             <p className="text-xs text-slate-500 mb-2">Everyone involved, with their LinkedIn profile.</p>
             <div className="space-y-2">
               {teamMembers.map((member, i) => (
-                <div key={i} className="flex gap-2">
-                  <input required={i === 0} placeholder="Name"
-                    className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={member.name} onChange={e => updateTeamMember(i, 'name', e.target.value)} />
-                  <input required={i === 0} type="url" placeholder="LinkedIn URL"
-                    className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={member.linkedinUrl} onChange={e => updateTeamMember(i, 'linkedinUrl', e.target.value)} />
-                  {teamMembers.length > 1 && (
-                    <button type="button" onClick={() => removeTeamMember(i)}
-                      className="px-3 text-slate-400 hover:text-red-500 text-sm">✕</button>
-                  )}
+                <div key={i} id={`field-team-${i}`}>
+                  <div className="flex gap-2">
+                    <input placeholder="Name"
+                      className={`flex-1 border rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 ${fieldClass(!!fieldErrors[`team-${i}`] || !!fieldErrors.team)}`}
+                      value={member.name} onChange={e => { updateTeamMember(i, 'name', e.target.value); clearFieldError(`team-${i}`); clearFieldError('team'); }} />
+                    <input type="url" placeholder="LinkedIn URL"
+                      className={`flex-1 border rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 ${fieldClass(!!fieldErrors[`team-${i}`] || !!fieldErrors.team)}`}
+                      value={member.linkedinUrl} onChange={e => { updateTeamMember(i, 'linkedinUrl', e.target.value); clearFieldError(`team-${i}`); clearFieldError('team'); }} />
+                    {teamMembers.length > 1 && (
+                      <button type="button" onClick={() => removeTeamMember(i)}
+                        className="px-3 text-slate-400 hover:text-red-500 text-sm">✕</button>
+                    )}
+                  </div>
+                  {fieldErrors[`team-${i}`] && <p className="text-xs text-red-600 mt-1 font-medium">{fieldErrors[`team-${i}`]}</p>}
                 </div>
               ))}
             </div>
+            {fieldErrors.team && <p className="text-xs text-red-600 mt-1 font-medium">{fieldErrors.team}</p>}
             <button type="button" onClick={addTeamMember} className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium">
               + Add team member
             </button>
           </div>
 
-          <div>
+          <div id="field-title">
             <label className="block text-sm font-medium text-slate-700 mb-1">Idea Title *</label>
-            <input required className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={idea.title} onChange={e => setIdea({ ...idea, title: e.target.value })} />
+            <input className={`w-full border rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 ${fieldClass(!!fieldErrors.title)}`}
+              value={idea.title} onChange={e => { setIdea({ ...idea, title: e.target.value }); clearFieldError('title'); }} />
+            {fieldErrors.title && <p className="text-xs text-red-600 mt-1 font-medium">{fieldErrors.title}</p>}
           </div>
           <div className="grid md:grid-cols-2 gap-4">
             <div>
@@ -262,13 +313,13 @@ function SubmitIdeaInner() {
             { key: 'revenueModel', label: 'Revenue Model *', rows: 2, placeholder: 'How will you make money?' },
             { key: 'founderContext', label: 'Why are you the right person to build this? (Optional)', rows: 3, placeholder: '' },
           ].map(f => (
-            <div key={f.key}>
+            <div key={f.key} id={`field-${f.key}`}>
               <label className="block text-sm font-medium text-slate-700 mb-1">{f.label}</label>
               <textarea rows={f.rows} placeholder={f.placeholder}
-                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                className={`w-full border rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 resize-none ${fieldClass(!!fieldErrors[f.key])}`}
                 value={(idea as any)[f.key]}
-                onChange={e => setIdea({ ...idea, [f.key]: e.target.value })}
-                required={!f.label.includes('Optional')} />
+                onChange={e => { setIdea({ ...idea, [f.key]: e.target.value }); clearFieldError(f.key); }} />
+              {fieldErrors[f.key] && <p className="text-xs text-red-600 mt-1 font-medium">{fieldErrors[f.key]}</p>}
             </div>
           ))}
           <button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700">

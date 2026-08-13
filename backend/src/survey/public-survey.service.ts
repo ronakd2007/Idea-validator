@@ -223,6 +223,17 @@ export class PublicSurveyService {
     if (!session || session.surveyId !== survey.id) throw new BadRequestException('Invalid or expired session');
     if (session.completed) throw new ConflictException('This session has already submitted a response');
 
+    // When the founder enabled "collect email addresses", a valid email is
+    // required — Google-Forms style. The public form enforces this too; this
+    // is the server-side guarantee.
+    if (survey.collectEmail) {
+      const mail = (respondentEmail || '').trim();
+      if (!mail) throw new BadRequestException('Your email is required to submit this survey.');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mail)) {
+        throw new BadRequestException('Enter a valid email address, e.g. you@example.com.');
+      }
+    }
+
     // Validate only against the question set this session actually saw — the
     // unseen A/B variant must never block submission even if marked required.
     const seenQuestions = this.visibleQuestions(survey.questions, sessionToken);
@@ -234,7 +245,7 @@ export class PublicSurveyService {
         data: {
           surveyId: survey.id,
           sessionId: session.id,
-          respondentEmail: survey.collectEmail && respondentEmail ? respondentEmail : null,
+          respondentEmail: survey.collectEmail && respondentEmail ? respondentEmail.trim() : null,
         },
       });
 

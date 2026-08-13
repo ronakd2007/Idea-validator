@@ -474,15 +474,41 @@ function SurveyBuilderInner() {
                   className="w-24 border border-slate-200 rounded-md px-2 py-1 text-sm"
                 />
               </label>
-              <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={survey.collectEmail}
-                  onChange={(e) => setSurvey({ ...survey, collectEmail: e.target.checked })}
-                  className="accent-blue-600 w-4 h-4"
-                />
-                Collect respondent email (optional)
-              </label>
+            </div>
+
+            {/* Response identity — Google-Forms-style choice. Stored in the
+                existing collectEmail flag; when ON, the public form requires a
+                valid email before submitting and records it with the response. */}
+            <div className="pt-4 mt-2 border-t border-slate-100">
+              <p className="text-sm font-medium text-slate-700 mb-2">Responses</p>
+              <div className="grid sm:grid-cols-2 gap-2">
+                <label className={`flex items-start gap-2.5 border rounded-lg p-3 cursor-pointer select-none transition ${!survey.collectEmail ? 'border-blue-400 bg-blue-50/50' : 'border-slate-200 hover:border-slate-300'}`}>
+                  <input
+                    type="radio"
+                    name="responseIdentity"
+                    checked={!survey.collectEmail}
+                    onChange={() => setSurvey({ ...survey, collectEmail: false })}
+                    className="accent-blue-600 mt-0.5"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-slate-800">Anonymous responses</span>
+                    <span className="block text-xs text-slate-500 mt-0.5">No personal details asked — respondents stay completely anonymous.</span>
+                  </span>
+                </label>
+                <label className={`flex items-start gap-2.5 border rounded-lg p-3 cursor-pointer select-none transition ${survey.collectEmail ? 'border-blue-400 bg-blue-50/50' : 'border-slate-200 hover:border-slate-300'}`}>
+                  <input
+                    type="radio"
+                    name="responseIdentity"
+                    checked={survey.collectEmail}
+                    onChange={() => setSurvey({ ...survey, collectEmail: true })}
+                    className="accent-blue-600 mt-0.5"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-slate-800">Collect email addresses</span>
+                    <span className="block text-xs text-slate-500 mt-0.5">Respondents must enter their email to submit — recorded with each response.</span>
+                  </span>
+                </label>
+              </div>
             </div>
           </div>
 
