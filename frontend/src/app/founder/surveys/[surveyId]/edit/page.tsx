@@ -7,6 +7,7 @@ import { getStoredUser } from '@/lib/auth';
 import { QUESTION_TYPES, QuestionType, SurveyDraft, IncentiveDraft, SurveyVersion, createQuestion, duplicateQuestion, surveyFromServer } from '@/lib/surveyTypes';
 import QuestionEditor from '@/components/survey/QuestionEditor';
 import QuestionPreview from '@/components/survey/QuestionPreview';
+import SurveyQrModal from '@/components/survey/SurveyQrModal';
 
 const BLANK_INCENTIVE: IncentiveDraft = { title: '', description: '', numberOfWinners: 1, eligibility: '', closingDate: null, collectContact: true };
 
@@ -38,6 +39,7 @@ function SurveyBuilderInner() {
   const [publishing, setPublishing] = useState(false);
   const [statusActionLoading, setStatusActionLoading] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [showQr, setShowQr] = useState(false);
   const [versions, setVersions] = useState<SurveyVersion[]>([]);
   const [showVersions, setShowVersions] = useState(false);
   const [creatingVersion, setCreatingVersion] = useState(false);
@@ -364,10 +366,19 @@ function SurveyBuilderInner() {
             <p className="text-xs text-slate-500 mb-0.5">Public link</p>
             <p className="text-sm text-slate-700 truncate">{publicUrl}</p>
           </div>
-          <button onClick={copyLink} className="text-xs shrink-0 bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-md hover:border-slate-300">
-            {linkCopied ? 'Copied!' : 'Copy'}
-          </button>
+          <div className="flex gap-2 shrink-0">
+            <button onClick={copyLink} className="text-xs bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-md hover:border-slate-300">
+              {linkCopied ? 'Copied!' : 'Copy'}
+            </button>
+            <button onClick={() => setShowQr(true)} className="text-xs bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-md hover:border-slate-300">
+              QR Code
+            </button>
+          </div>
         </div>
+      )}
+
+      {showQr && publicUrl && (
+        <SurveyQrModal url={publicUrl} title={survey.title || 'Survey'} onClose={() => setShowQr(false)} />
       )}
 
       <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-6">

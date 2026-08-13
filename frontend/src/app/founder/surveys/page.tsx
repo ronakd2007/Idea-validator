@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { getStoredUser } from '@/lib/auth';
+import SurveyQrModal from '@/components/survey/SurveyQrModal';
 
 const STATUS_BADGE: Record<string, string> = {
   DRAFT: 'bg-slate-100 text-slate-600',
@@ -25,6 +26,7 @@ export default function MySurveysPage() {
   const [ideas, setIdeas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [qrSurvey, setQrSurvey] = useState<any>(null);
   const [createStep, setCreateStep] = useState<'choice' | 'manual' | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [selectedIdeaId, setSelectedIdeaId] = useState('');
@@ -210,6 +212,11 @@ export default function MySurveysPage() {
                   <button onClick={() => copyLink(s)} className="text-sm bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg hover:border-slate-300 text-center">
                     {copiedId === s.id ? 'Copied!' : 'Copy Link'}
                   </button>
+                  {s.publicId && (
+                    <button onClick={() => setQrSurvey(s)} className="text-sm bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg hover:border-slate-300 text-center">
+                      QR Code
+                    </button>
+                  )}
                 </>
               )}
               {s.status === 'LIVE' && (
@@ -221,6 +228,14 @@ export default function MySurveysPage() {
           </div>
         ))}
       </div>
+
+      {qrSurvey && (
+        <SurveyQrModal
+          url={`${window.location.origin}/survey/${qrSurvey.publicId}`}
+          title={qrSurvey.title}
+          onClose={() => setQrSurvey(null)}
+        />
+      )}
     </div>
   );
 }
