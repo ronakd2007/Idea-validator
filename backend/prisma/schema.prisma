@@ -86,6 +86,10 @@ model Idea {
   validations    ValidationResponse[]
   payments       Payment[]
   surveys        Survey[]
+
+  // Postgres does not index FK columns automatically — without this,
+  // "all ideas by founder" is a sequential scan.
+  @@index([founderId])
 }
 
 model FounderFitSelfAssessment {
@@ -122,6 +126,7 @@ model ValidationResponse {
   openFeedback           OpenFeedback?
 
   @@unique([ideaId, validatorId])
+  @@index([validatorId]) // validator history lookups; ideaId is covered by the unique above
 }
 
 model MarketOpportunityScore {
@@ -295,6 +300,9 @@ model Payment {
   status           String   @default("PENDING")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+
+  @@index([ideaId])
+  @@index([founderId])
 }
 
 // Mass Survey — Phase 1 (builder/draft) + Phase 2 (publish/respond).
@@ -323,6 +331,9 @@ model Survey {
   sessions  SurveySession[]
   responses SurveyResponse[]
   incentive SurveyIncentive?
+
+  @@index([founderId])
+  @@index([ideaId])
 }
 
 model SurveyQuestion {
@@ -352,6 +363,8 @@ model SurveyQuestion {
 
   options SurveyQuestionOption[]
   answers SurveyAnswer[]
+
+  @@index([surveyId])
 }
 
 model SurveyQuestionOption {
@@ -361,6 +374,8 @@ model SurveyQuestionOption {
   label      String
   order      Int
   imageUrl   String? // Phase 4 — for IMAGE_CHOICE options (logo/design/packaging comparisons)
+
+  @@index([questionId])
 }
 
 // Created when a respondent opens the public link — exists independently of
@@ -377,6 +392,8 @@ model SurveySession {
   completed         Boolean   @default(false)
 
   response SurveyResponse?
+
+  @@index([surveyId])
 }
 
 model SurveyResponse {
@@ -390,6 +407,8 @@ model SurveyResponse {
   createdAt       DateTime      @default(now())
 
   answers SurveyAnswer[]
+
+  @@index([surveyId])
 }
 
 model SurveyAnswer {
@@ -401,6 +420,7 @@ model SurveyAnswer {
   value      String // JSON-encoded: string | string[] | number depending on question type
 
   @@unique([responseId, questionId])
+  @@index([questionId]) // per-question analytics; responseId is covered by the unique above
 }
 
 // Phase 4 — optional, simple giveaway config. One per survey (founder can offer
@@ -469,4 +489,6 @@ model IncentiveEntry {
   name        String
   contact     String // email or phone, whatever the respondent chose to give
   createdAt   DateTime        @default(now())
+
+  @@index([incentiveId])
 }

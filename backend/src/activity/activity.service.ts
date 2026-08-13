@@ -46,6 +46,7 @@ export const ACTION_CATALOG: Record<string, { category: string; label: string }>
   ADMIN_VALIDATOR_REJECTED: { category: 'ADMIN', label: 'Rejected validator' },
   ADMIN_USER_ACTIVATED: { category: 'ADMIN', label: 'Activated user' },
   ADMIN_USER_DEACTIVATED: { category: 'ADMIN', label: 'Deactivated user' },
+  ADMIN_USER_DELETED: { category: 'ADMIN', label: 'Deleted user and all their data' },
   ADMIN_IDEA_DELETED: { category: 'ADMIN', label: 'Deleted idea' },
   ADMIN_DASHBOARD_UNLOCKED: { category: 'ADMIN', label: 'Unlocked dashboard early' },
   ADMIN_DASHBOARD_RELOCKED: { category: 'ADMIN', label: 'Restored dashboard timer' },

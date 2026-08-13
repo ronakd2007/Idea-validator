@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import Navbar from '@/components/Navbar';
 import ViewAsBanner from '@/components/ViewAsBanner';
+import BackendWarmup from '@/components/BackendWarmup';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -16,6 +17,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className={`${inter.className} min-h-screen`}>
         <div className="relative">
+          {/* Wakes the backend + database the moment any page loads, so the
+              visitor's first real action doesn't pay the cold-start cost. */}
+          <BackendWarmup />
           {/* Renders only while an admin is in View-as-User mode; sits above
               every sticky header (z-60) and cannot be dismissed. */}
           <ViewAsBanner />

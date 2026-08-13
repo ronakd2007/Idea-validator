@@ -6,7 +6,6 @@ import { api } from '@/lib/api';
 import { useAdminGuard } from '@/lib/adminGuard';
 import RadarChart from '@/components/RadarChart';
 import { MATRIX_CATEGORIES, RISK_LABELS, breakdownStatus, dominantRisk, riskTone, TONE_DOM } from '@/lib/reportStatus';
-import { downloadValidationReport } from '@/lib/generateValidationReport';
 import { CATEGORY_STYLE, SURVEY_STATUS_STYLE, formatDate, formatDateTime, timeAgo } from '@/lib/adminActivity';
 
 const TABS = ['Idea', 'Validations', 'Surveys', 'Activity'];
@@ -42,6 +41,8 @@ export default function AdminIdeaDetailPage() {
     setDownloading(true);
     setReportError('');
     try {
+      // Loaded on click — @react-pdf is ~1MB of JS the page otherwise never needs.
+      const { downloadValidationReport } = await import('@/lib/generateValidationReport');
       await downloadValidationReport({
         idea: data.idea,
         aggregated: data.aggregated,

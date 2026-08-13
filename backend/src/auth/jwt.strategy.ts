@@ -4,6 +4,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { ViewAsService } from './view-as.service';
+import { getCachedUser, setCachedUser } from './user-cache';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -22,14 +23,20 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  // Re-checked on every request (tokens live 7 days): deactivating an account
-  // cuts its access immediately instead of whenever the token expires, and the
-  // role comes from the database so a role change doesn't linger in old tokens.
+  // Re-checked against the database (tokens live 7 days) so deactivation and
+  // role changes don't linger in old tokens — but behind a 60s cache, because
+  // paying a full DB round trip on EVERY request was the single biggest
+  // per-request latency cost. Deactivation still bites instantly: the admin
+  // toggle invalidates the cache entry directly (see user-cache.ts).
   async validate(req: any, payload: any) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-      select: { id: true, email: true, role: true, isActive: true },
-    });
+    let user = getCachedUser(payload.sub);
+    if (!user) {
+      user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        select: { id: true, email: true, role: true, isActive: true },
+      });
+      if (user) setCachedUser(user);
+    }
     if (!user || !user.isActive) throw new UnauthorizedException('Account is deactivated');
 
     const realIdentity = { userId: user.id, email: user.email, role: user.role };

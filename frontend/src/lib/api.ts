@@ -173,6 +173,7 @@ export const api = {
   startViewAs: (userId: string) => request(`/admin/view-as/${userId}`, { method: 'POST' }),
   endViewAs: (targetUserId?: string) => request('/admin/view-as/end', { method: 'POST', body: JSON.stringify({ targetUserId }) }),
   toggleUserStatus: (id: string) => request(`/admin/users/${id}/toggle-status`, { method: 'PATCH' }),
+  adminDeleteUser: (id: string) => request(`/admin/users/${id}`, { method: 'DELETE' }),
   getAdminSurveys: () => request('/admin/surveys'),
   adminToggleSurveyStatus: (id: string) => request(`/admin/surveys/${id}/toggle-status`, { method: 'PATCH' }),
   adminDeleteSurvey: (id: string) => request(`/admin/surveys/${id}`, { method: 'DELETE' }),

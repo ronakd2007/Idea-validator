@@ -2,9 +2,15 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import * as compression from 'compression';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
+
+  // Gzip every response — the dashboard payload (all validations + relations)
+  // is highly compressible JSON, and smaller bodies matter double on the
+  // cross-region hop between the API host and visitors.
+  app.use(compression());
 
   const allowedOrigins = process.env.FRONTEND_URL
     ? process.env.FRONTEND_URL.split(',').map((o) => o.trim()).filter(Boolean)

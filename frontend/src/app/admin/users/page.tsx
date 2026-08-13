@@ -35,6 +35,21 @@ export default function AdminUsersPage() {
     }
   };
 
+  // Irreversible — everything the user ever created goes with them, so the
+  // confirmation requires typing DELETE rather than one accidental click.
+  const deleteUser = async (u: any) => {
+    const typed = window.prompt(
+      `Permanently delete ${u.name} (${u.email})?\n\nThis erases their account AND all their history: ideas, validations, surveys, responses, payments and activity. This cannot be undone.\n\nType DELETE to confirm:`
+    );
+    if (typed !== 'DELETE') return;
+    setActionLoading(u.id + '_delete');
+    try {
+      await api.adminDeleteUser(u.id);
+      setUsers(prev => prev.filter(x => x.id !== u.id));
+    } catch (err: any) { alert(err.message); }
+    finally { setActionLoading(null); }
+  };
+
   const toggleStatus = async (id: string) => {
     setActionLoading(id);
     try {
@@ -121,6 +136,11 @@ export default function AdminUsersPage() {
                     <button onClick={() => toggleStatus(u.id)} disabled={actionLoading === u.id}
                       className={`text-xs px-3 py-1 rounded border font-medium transition disabled:opacity-50 ${u.isActive ? 'border-red-300 text-red-600 hover:bg-red-50' : 'border-emerald-300 text-emerald-600 hover:bg-emerald-50'}`}>
                       {actionLoading === u.id ? '...' : u.isActive ? 'Deactivate' : 'Activate'}
+                    </button>
+                    <button onClick={() => deleteUser(u)} disabled={actionLoading === u.id + '_delete'}
+                      title="Permanently delete this user and all their data"
+                      className="text-xs px-3 py-1 rounded border border-red-300 bg-red-50 text-red-700 font-medium hover:bg-red-100 transition disabled:opacity-50">
+                      {actionLoading === u.id + '_delete' ? '...' : 'Delete'}
                     </button>
                   </div>
                 </td>

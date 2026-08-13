@@ -23,6 +23,7 @@ export default function AdminUserDetailPage() {
   const [error, setError] = useState('');
   const [tab, setTab] = useState('Profile');
   const [startingView, setStartingView] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!allowed || !userId) return;
@@ -73,27 +74,49 @@ export default function AdminUserDetailPage() {
           </div>
         </div>
         {user.role !== 'ADMIN' && (
-          <button
-            onClick={async () => {
-              const ok = window.confirm(
-                `View this account as ${user.name}?\n\nYou will temporarily view the platform from this user's perspective. Your admin session will remain active.`
-              );
-              if (!ok) return;
-              setStartingView(true);
-              try {
-                const res = await api.startViewAs(user.id);
-                setViewContext({ token: res.viewToken, expiresAt: res.expiresAt, target: res.target });
-                router.push(res.target.role === 'VALIDATOR' ? '/validator/dashboard' : '/founder');
-              } catch (err: any) {
-                alert(err.message);
-                setStartingView(false);
-              }
-            }}
-            disabled={startingView}
-            className="bg-amber-500 text-amber-950 px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-400 disabled:opacity-50 shadow-sm"
-          >
-            {startingView ? 'Starting…' : '👁 View as User'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={async () => {
+                const ok = window.confirm(
+                  `View this account as ${user.name}?\n\nYou will temporarily view the platform from this user's perspective. Your admin session will remain active.`
+                );
+                if (!ok) return;
+                setStartingView(true);
+                try {
+                  const res = await api.startViewAs(user.id);
+                  setViewContext({ token: res.viewToken, expiresAt: res.expiresAt, target: res.target });
+                  router.push(res.target.role === 'VALIDATOR' ? '/validator/dashboard' : '/founder');
+                } catch (err: any) {
+                  alert(err.message);
+                  setStartingView(false);
+                }
+              }}
+              disabled={startingView}
+              className="bg-amber-500 text-amber-950 px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-400 disabled:opacity-50 shadow-sm"
+            >
+              {startingView ? 'Starting…' : '👁 View as User'}
+            </button>
+            <button
+              onClick={async () => {
+                const typed = window.prompt(
+                  `Permanently delete ${user.name} (${user.email})?\n\nThis erases their account AND all their history: ideas, validations, surveys, responses, payments and activity. This cannot be undone.\n\nType DELETE to confirm:`
+                );
+                if (typed !== 'DELETE') return;
+                setDeleting(true);
+                try {
+                  await api.adminDeleteUser(user.id);
+                  router.push('/admin/users');
+                } catch (err: any) {
+                  alert(err.message);
+                  setDeleting(false);
+                }
+              }}
+              disabled={deleting}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-700 disabled:opacity-50 shadow-sm"
+            >
+              {deleting ? 'Deleting…' : '🗑 Delete User'}
+            </button>
+          </div>
         )}
       </div>
 

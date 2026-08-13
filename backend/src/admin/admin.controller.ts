@@ -74,6 +74,13 @@ export class AdminController {
     return this.adminService.toggleUserStatus(id, req.user.userId);
   }
 
+  // Irreversible: erases the user and all their data/history. Self-deletion
+  // and deleting other ADMIN accounts are refused in the service.
+  @Delete('users/:id')
+  deleteUser(@Param('id') id: string, @Request() req) {
+    return this.adminService.deleteUser(id, req.user.userId);
+  }
+
   @Get('surveys')
   getSurveys() {
     return this.adminService.getSurveys();

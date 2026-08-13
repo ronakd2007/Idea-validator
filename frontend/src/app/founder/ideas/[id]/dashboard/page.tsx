@@ -5,12 +5,13 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { getStoredUser, isViewMode } from '@/lib/auth';
 import RadarChart from '@/components/RadarChart';
-import * as XLSX from 'xlsx';
+// xlsx (~1MB minified) and @react-pdf (~1MB) are loaded on demand inside the
+// click handlers below — bundling them statically made every dashboard visit
+// download and parse ~2MB of JS that most visits never use.
 import {
   MATRIX_CATEGORIES, RISK_LABELS, breakdownStatus, dominantRisk, riskTone, RISK_LABEL,
   successLabel, sharkLabel, pctTone, resolveStrongestWeakest, TONE_DOM,
 } from '@/lib/reportStatus';
-import { downloadValidationReport } from '@/lib/generateValidationReport';
 import { parseAiSummary, toSentences, splitBoldRuns } from '@/lib/parseAiSummary';
 import ValidationProgress, { ProgressStep } from '@/components/founder/ValidationProgress';
 import ValidationGapCard from '@/components/founder/ValidationGapCard';
@@ -217,6 +218,7 @@ export default function IdeaDashboardPage() {
     setDownloadingReport(true);
     setReportError('');
     try {
+      const { downloadValidationReport } = await import('@/lib/generateValidationReport');
       await downloadValidationReport({ idea, aggregated: a, aiSummary, marketResponseLabel, surveyAnalytics });
       // Records the download for the admin activity feed. Deliberately not
       // awaited or surfaced — the report already reached the user, so a failed
@@ -229,7 +231,8 @@ export default function IdeaDashboardPage() {
     }
   };
 
-  const downloadContacts = () => {
+  const downloadContacts = async () => {
+    const XLSX = await import('xlsx');
     const validations: any[] = idea?.validations || [];
 
     const sum5 = (obj: any, keys: string[]) =>

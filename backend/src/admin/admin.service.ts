@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
+import { invalidateUser } from '../auth/user-cache';
 
 @Injectable()
 export class AdminService {
@@ -75,6 +76,7 @@ export class AdminService {
       where: { id: profile.userId },
       data: { isActive: false },
     });
+    invalidateUser(profile.userId); // deactivation must bite instantly, not after the auth cache TTL
     await this.logAdmin(adminId, 'ADMIN_VALIDATOR_REJECTED', {
       type: 'USER',
       id: profile.user.id,
@@ -135,6 +137,74 @@ export class AdminService {
     return { dashboardUnlockedAt: updated.dashboardUnlockedAt };
   }
 
+  /**
+   * Hard-deletes a user and everything they ever touched. Irreversible by
+   * design — this is the "erase all history" action, not a soft deactivate.
+   *
+   * What goes: their account, validator profile, ideas (which cascades every
+   * validation received, score row, payment and attached survey), standalone
+   * surveys (cascading questions, sessions, responses, answers, incentives
+   * and giveaway entries), validations they authored on other founders'
+   * ideas, OTP rows for their phone, and every activity row where they were
+   * the actor, the owner, or the target.
+   *
+   * Guardrails: an admin can never delete themselves, and never another
+   * ADMIN account. The deletion itself is logged AFTER it succeeds — the
+   * Activity row stores the name as a text snapshot with a soft reference,
+   * so the audit line outlives the account it describes.
+   */
+  async deleteUser(userId: string, adminId: string) {
+    if (userId === adminId) throw new ForbiddenException('You cannot delete your own account');
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true, role: true, phone: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.role === 'ADMIN') throw new ForbiddenException('Admin accounts cannot be deleted');
+
+    await this.prisma.$transaction([
+      // Their entire activity history — as actor, as owner of the target, and
+      // as the target of admin actions. "Delete all history" means all of it.
+      this.prisma.activity.deleteMany({
+        where: {
+          OR: [
+            { userId },
+            { ownerUserId: userId },
+            { targetType: 'USER', targetId: userId },
+          ],
+        },
+      }),
+      // Standalone surveys don't hang off an idea, so they need their own
+      // delete; survey children (questions/sessions/responses/answers/
+      // incentive/entries) all cascade from Survey.
+      this.prisma.survey.deleteMany({ where: { founderId: userId } }),
+      // Ideas cascade: self-assessment, every validation received (with all
+      // score rows), payments, and any attached surveys.
+      this.prisma.idea.deleteMany({ where: { founderId: userId } }),
+      // Validations they authored on OTHER founders' ideas — those founders'
+      // aggregates recompute automatically since scores are derived live.
+      this.prisma.validationResponse.deleteMany({ where: { validatorId: userId } }),
+      // Safety net: payments are normally gone via the idea cascade.
+      this.prisma.payment.deleteMany({ where: { founderId: userId } }),
+      ...(user.phone ? [this.prisma.otpVerification.deleteMany({ where: { phone: user.phone } })] : []),
+      // Finally the account itself; ValidatorProfile cascades from User.
+      this.prisma.user.delete({ where: { id: userId } }),
+    ]);
+
+    // A deleted user's JWT must die immediately, not after the auth cache TTL.
+    invalidateUser(userId);
+
+    await this.logAdmin(
+      adminId,
+      'ADMIN_USER_DELETED',
+      { type: 'USER', id: user.id, label: user.name },
+      { role: user.role, email: user.email }
+    );
+
+    return { success: true };
+  }
+
   async toggleUserStatus(userId: string, adminId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
@@ -142,6 +212,7 @@ export class AdminService {
       where: { id: userId },
       data: { isActive: !user.isActive },
     });
+    invalidateUser(userId); // deactivation must bite instantly, not after the auth cache TTL
     await this.logAdmin(
       adminId,
       updated.isActive ? 'ADMIN_USER_ACTIVATED' : 'ADMIN_USER_DEACTIVATED',
