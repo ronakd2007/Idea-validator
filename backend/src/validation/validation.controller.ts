@@ -3,6 +3,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { ValidationService } from './validation.service';
+import { SubmitValidationDto } from './dto/submit-validation.dto';
 
 @Controller('validation')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -11,7 +12,7 @@ export class ValidationController {
 
   @Post(':ideaId')
   @Roles('VALIDATOR')
-  submit(@Param('ideaId') ideaId: string, @Request() req, @Body() body: any) {
+  submit(@Param('ideaId') ideaId: string, @Request() req, @Body() body: SubmitValidationDto) {
     return this.validationService.submitValidation(ideaId, req.user.userId, body);
   }
 

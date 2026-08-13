@@ -39,6 +39,7 @@ model ValidatorProfile {
   contactPreferences String    @default("[]")
   isApproved         Boolean   @default(false)
   approvedAt         DateTime?
+  rejectedAt         DateTime? // set on admin rejection so the application leaves the pending queue permanently
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 }

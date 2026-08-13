@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
 
@@ -79,32 +78,9 @@ export class PaymentService {
     });
   }
 
-  async verifyRazorpay(body: {
-    razorpay_order_id: string;
-    razorpay_payment_id: string;
-    razorpay_signature: string;
-    ideaId: string;
-  }) {
-    const sign = `${body.razorpay_order_id}|${body.razorpay_payment_id}`;
-    const expected = crypto
-      .createHmac('sha256', this.config.get('RAZORPAY_KEY_SECRET', ''))
-      .update(sign)
-      .digest('hex');
-
-    if (expected !== body.razorpay_signature) throw new BadRequestException('Invalid signature');
-
-    await this.prisma.payment.updateMany({
-      where: { gatewayPaymentId: body.razorpay_order_id },
-      data: { status: 'COMPLETED' },
-    });
-
-    await this.prisma.idea.update({
-      where: { id: body.ideaId },
-      data: { paymentStatus: 'COMPLETED' },
-    });
-
-    await this.logIdeaSubmitted(body.ideaId);
-
-    return { success: true };
-  }
+  // The Razorpay verify endpoint was removed deliberately: no order-creation
+  // endpoint ever existed (so no Payment row could match), the frontend never
+  // called it, and with RAZORPAY_KEY_SECRET unset its HMAC check was forgeable
+  // with an empty key — letting anyone mark any idea as paid. Reintroduce it
+  // only together with a server-side create-order flow and an ownership check.
 }

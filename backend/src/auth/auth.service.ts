@@ -26,7 +26,7 @@ export class AuthService {
     });
   }
 
-  async sendOtp(phone: string): Promise<{ otp: string }> {
+  async sendOtp(phone: string): Promise<{ message: string; otp?: string }> {
     // Invalidate previous unused OTPs for this phone
     await this.prisma.otpVerification.updateMany({
       where: { phone, isUsed: false },
@@ -38,8 +38,12 @@ export class AuthService {
 
     await this.prisma.otpVerification.create({ data: { phone, otp, expiresAt } });
 
-    // In production: send via SMS gateway. For local test mode, return OTP directly.
-    return { otp };
+    // No SMS gateway exists yet, so test mode hands the OTP back in the
+    // response. In production that means anyone can verify any phone number,
+    // so it must be opted into explicitly (set OTP_TEST_MODE=true on Render
+    // until an SMS provider is wired up).
+    const testMode = process.env.NODE_ENV !== 'production' || process.env.OTP_TEST_MODE === 'true';
+    return testMode ? { message: 'OTP generated (test mode)', otp } : { message: 'OTP sent' };
   }
 
   private async verifyOtp(phone: string, otp: string): Promise<void> {
@@ -185,11 +189,15 @@ export class AuthService {
   async registerFounderWithGoogle(idToken: string) {
     const { email, name, googleId } = await this.verifyGoogleToken(idToken);
 
-    let user = await this.prisma.user.findUnique({ where: { googleId } });
+    let user = await this.prisma.user.findUnique({ where: { googleId }, include: { validatorProfile: true } });
     if (!user) {
       const byEmail = await this.prisma.user.findUnique({ where: { email } });
       if (byEmail) {
-        user = await this.prisma.user.update({ where: { id: byEmail.id }, data: { googleId } });
+        user = await this.prisma.user.update({
+          where: { id: byEmail.id },
+          data: { googleId },
+          include: { validatorProfile: true },
+        });
       }
     }
 
@@ -197,10 +205,17 @@ export class AuthService {
     if (!user) {
       user = await this.prisma.user.create({
         data: { name, email, googleId, role: 'FOUNDER', phoneVerified: false },
+        include: { validatorProfile: true },
       });
     }
 
     if (!user.isActive) throw new UnauthorizedException('Account is deactivated');
+    // This endpoint doubles as sign-in for existing accounts, so it must
+    // enforce the same gate as login/loginWithGoogle — otherwise an unapproved
+    // validator could collect a valid token through the founder sign-up button.
+    if (user.role === 'VALIDATOR' && user.validatorProfile && !user.validatorProfile.isApproved) {
+      throw new UnauthorizedException('Your validator profile is pending admin approval');
+    }
 
     // This endpoint doubles as sign-in for people who already registered, so
     // the action recorded depends on whether an account was actually created.

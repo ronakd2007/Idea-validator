@@ -660,7 +660,10 @@ export class SurveyAnalyticsService {
 
     const headers = ['Response ID', 'Survey Version', 'Submitted At', 'Duration (s)', 'Quality', ...survey.questions.map((q) => `${q.questionText} [${q.type}]`)];
     const escape = (v: any) => {
-      const s = v == null ? '' : String(v);
+      let s = v == null ? '' : String(v);
+      // Formula-injection guard: respondent text starting with =, +, -, @ or a
+      // tab/CR would otherwise execute as a formula when opened in Excel/Sheets.
+      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
 

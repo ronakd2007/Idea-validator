@@ -3,6 +3,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { IdeasService } from './ideas.service';
+import { CreateIdeaDto } from './dto/idea.dto';
 
 @Controller('ideas')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -11,7 +12,7 @@ export class IdeasController {
 
   @Post()
   @Roles('FOUNDER')
-  create(@Request() req, @Body() body: any) {
+  create(@Request() req, @Body() body: CreateIdeaDto) {
     return this.ideasService.create(req.user.userId, body);
   }
 
@@ -34,13 +35,13 @@ export class IdeasController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.ideasService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req) {
+    return this.ideasService.findOne(id, req.user);
   }
 
   @Post(':id/revise')
   @Roles('FOUNDER')
-  createRevision(@Param('id') id: string, @Request() req, @Body() body: any) {
+  createRevision(@Param('id') id: string, @Request() req, @Body() body: CreateIdeaDto) {
     return this.ideasService.createRevision(id, req.user.userId, body);
   }
 

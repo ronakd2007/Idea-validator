@@ -68,7 +68,37 @@ export default function IdeaDashboardPage() {
   }, []);
 
   if (loading) return <div className="flex items-center justify-center min-h-screen"><div className="text-slate-500">Loading dashboard...</div></div>;
-  if (error) return <div className="max-w-2xl mx-auto px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error}</div></div>;
+  if (error) return <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error}</div></div>;
+
+  // Locked state: the server withholds all validation data until 3 validations
+  // arrive or 48h pass — this renders the progress it returns instead.
+  if (data && data.available === false) {
+    const hoursLeft = Math.max(0, Math.ceil((new Date(data.unlockAt).getTime() - Date.now()) / (60 * 60 * 1000)));
+    const received = data.validationCount ?? 0;
+    const needed = data.validationsNeeded ?? 3;
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-10 w-full max-w-lg text-center">
+          <div className="text-5xl mb-4">⏳</div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Validation in progress</h2>
+          <p className="text-slate-500 mb-6">
+            Experts are reviewing <span className="font-medium text-slate-700">{data.idea?.title}</span>.
+            Your dashboard unlocks after {needed} validations or in about {hoursLeft}h — whichever comes first.
+          </p>
+          <div className="mb-2 flex justify-between text-sm text-slate-500">
+            <span>{received} of {needed} expert validations received</span>
+            <span>{Math.round((received / needed) * 100)}%</span>
+          </div>
+          <div className="w-full bg-slate-100 rounded-full h-3 mb-8">
+            <div className="bg-blue-600 h-3 rounded-full transition-all" style={{ width: `${Math.min(100, (received / needed) * 100)}%` }} />
+          </div>
+          <Link href="/founder/ideas" className="inline-block bg-blue-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-blue-700">
+            Back to My Ideas
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   const { idea, aggregated } = data || {};
   const a = aggregated || {};
@@ -352,7 +382,7 @@ export default function IdeaDashboardPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-10">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
       {/* Header / Hero */}
       <div className="mb-6">
         <div className="flex flex-wrap items-center gap-2 mb-3">

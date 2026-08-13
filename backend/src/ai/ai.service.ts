@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, ServiceUnavailableException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ForbiddenException, ServiceUnavailableException, BadRequestException } from '@nestjs/common';
 import Groq from 'groq-sdk';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -16,7 +16,28 @@ export interface GeneratedQuestion {
 
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
+
   constructor(private prisma: PrismaService) {}
+
+  // Groq failures used to escape as bare 500 "Internal server error", which
+  // made a bad/revoked GROQ_API_KEY in production undiagnosable from the UI.
+  // This logs the real cause server-side and returns a message that says
+  // which kind of failure it was.
+  private toAiError(err: any): ServiceUnavailableException {
+    const status = err?.status ?? err?.response?.status;
+    this.logger.error(`Groq request failed (status ${status ?? 'n/a'}): ${err?.message}`);
+    if (status === 401 || status === 403) {
+      return new ServiceUnavailableException('AI service rejected the API key — check GROQ_API_KEY on the server.');
+    }
+    if (status === 429) {
+      return new ServiceUnavailableException('AI service is rate limited right now — try again in a minute.');
+    }
+    if (status === 400 && /model|decommission/i.test(err?.message || '')) {
+      return new ServiceUnavailableException('The configured AI model is no longer available — the model name needs updating.');
+    }
+    return new ServiceUnavailableException('AI service is temporarily unavailable — try again shortly.');
+  }
 
   async generateDashboardSummary(ideaId: string, founderId: string): Promise<{ summary: string }> {
     const idea = await this.prisma.idea.findUnique({
@@ -139,11 +160,16 @@ NEXT STEPS
 [2-3 concrete, specific actions the founder should take based on this validation data.]`;
 
     const groq = new Groq({ apiKey });
-    const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 800,
-    });
+    let completion;
+    try {
+      completion = await groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 800,
+      });
+    } catch (err) {
+      throw this.toAiError(err);
+    }
 
     const summary = completion.choices[0]?.message?.content || '';
     return { summary };
@@ -173,13 +199,18 @@ NEXT STEPS
 
     let raw: any;
     for (let attempt = 0; attempt < 2; attempt++) {
-      const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'user', content: attempt === 0 ? prompt : `${prompt}\n\nReturn ONLY the JSON object. No commentary, no markdown fences.` }],
-        temperature: 0.3,
-        max_tokens: 3000,
-        response_format: { type: 'json_object' },
-      });
+      let completion;
+      try {
+        completion = await groq.chat.completions.create({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: attempt === 0 ? prompt : `${prompt}\n\nReturn ONLY the JSON object. No commentary, no markdown fences.` }],
+          temperature: 0.3,
+          max_tokens: 3000,
+          response_format: { type: 'json_object' },
+        });
+      } catch (err) {
+        throw this.toAiError(err);
+      }
       try {
         raw = JSON.parse(completion.choices[0]?.message?.content || '{}');
         break;

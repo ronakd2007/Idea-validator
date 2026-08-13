@@ -214,10 +214,10 @@ export default function ValidateIdeaPage() {
   const completedFrameworksCount = FRAMEWORKS.filter(f => f.stepIndex < step).length;
 
   if (loading) return <div className="flex items-center justify-center min-h-screen text-slate-500">Loading...</div>;
-  if (error && !idea) return <div className="max-w-2xl mx-auto px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error}</div></div>;
+  if (error && !idea) return <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error}</div></div>;
 
   return (
-    <div className="max-w-6xl mx-auto px-8 py-10">
+    <div className="max-w-6xl mx-auto px-4 sm:px-8 py-10">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Validate: {idea?.title}</h1>
@@ -299,7 +299,7 @@ export default function ValidateIdeaPage() {
                 {idea.selfAssessment && (
                   <div>
                     <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Founder Self-Assessment</p>
-                    <div className="grid grid-cols-5 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                       {[
                         ['Industry Knowledge', idea.selfAssessment.industryKnowledge],
                         ['Experience', idea.selfAssessment.relevantExperience],
@@ -333,12 +333,16 @@ export default function ValidateIdeaPage() {
                 <ScoreSelector label="Market Growth Rate" value={marketOpp.marketGrowthRate} onChange={v => setMarketOpp({ ...marketOpp, marketGrowthRate: v })} />
                 <ScoreSelector label="Competition Gap" value={marketOpp.competitionGap} onChange={v => setMarketOpp({ ...marketOpp, competitionGap: v })} />
                 <hr className="my-5 border-slate-200" />
-                <h3 className="font-medium text-slate-800 mb-3">Feasibility (higher = easier)</h3>
-                <ScoreSelector label="Technical Complexity" value={feasibility.technicalComplexity} onChange={v => setFeasibility({ ...feasibility, technicalComplexity: v })} />
-                <ScoreSelector label="Capital Requirement" value={feasibility.capitalRequirement} onChange={v => setFeasibility({ ...feasibility, capitalRequirement: v })} />
-                <ScoreSelector label="Regulatory Difficulty" value={feasibility.regulatoryDifficulty} onChange={v => setFeasibility({ ...feasibility, regulatoryDifficulty: v })} />
-                <ScoreSelector label="Talent Availability" value={feasibility.talentAvailability} onChange={v => setFeasibility({ ...feasibility, talentAvailability: v })} />
-                <ScoreSelector label="Time to Launch" value={feasibility.timeToLaunch} onChange={v => setFeasibility({ ...feasibility, timeToLaunch: v })} />
+                <h3 className="font-medium text-slate-800 mb-3">Feasibility (higher = easier to execute)</h3>
+                {/* These three are inverted metrics — a high score means the
+                    hurdle is SMALL. The anchors spell that out because the
+                    default "Very Weak → Excellent" pair reads backwards here
+                    and quietly corrupted the aggregate. */}
+                <ScoreSelector label="Technical Complexity" description="10 = simple to build, 1 = highly complex" lowLabel="Highly complex" highLabel="Simple to build" value={feasibility.technicalComplexity} onChange={v => setFeasibility({ ...feasibility, technicalComplexity: v })} />
+                <ScoreSelector label="Capital Requirement" description="10 = needs little capital, 1 = capital heavy" lowLabel="Capital heavy" highLabel="Low capital" value={feasibility.capitalRequirement} onChange={v => setFeasibility({ ...feasibility, capitalRequirement: v })} />
+                <ScoreSelector label="Regulatory Difficulty" description="10 = few regulatory hurdles, 1 = heavily regulated" lowLabel="Heavily regulated" highLabel="Few hurdles" value={feasibility.regulatoryDifficulty} onChange={v => setFeasibility({ ...feasibility, regulatoryDifficulty: v })} />
+                <ScoreSelector label="Talent Availability" lowLabel="Scarce talent" highLabel="Talent abundant" value={feasibility.talentAvailability} onChange={v => setFeasibility({ ...feasibility, talentAvailability: v })} />
+                <ScoreSelector label="Time to Launch" description="10 = could launch quickly, 1 = years away" lowLabel="Years away" highLabel="Launch quickly" value={feasibility.timeToLaunch} onChange={v => setFeasibility({ ...feasibility, timeToLaunch: v })} />
               </div>
             )}
 
@@ -362,11 +366,11 @@ export default function ValidateIdeaPage() {
 
             {step === 3 && (
               <div>
-                <h3 className="font-medium text-slate-800 mb-3">Scalability</h3>
+                <h3 className="font-medium text-slate-800 mb-3">Scalability (higher = scales better)</h3>
                 <ScoreSelector label="Geographic Expansion" value={scalability.geographicExpansion} onChange={v => setScalability({ ...scalability, geographicExpansion: v })} />
                 <ScoreSelector label="Automation Potential" value={scalability.automationPotential} onChange={v => setScalability({ ...scalability, automationPotential: v })} />
-                <ScoreSelector label="Operational Complexity" value={scalability.operationalComplexity} onChange={v => setScalability({ ...scalability, operationalComplexity: v })} />
-                <ScoreSelector label="Dependence on Founder" value={scalability.dependenceOnFounder} onChange={v => setScalability({ ...scalability, dependenceOnFounder: v })} />
+                <ScoreSelector label="Operational Complexity" description="10 = simple operations, 1 = operationally heavy" lowLabel="Very complex ops" highLabel="Simple ops" value={scalability.operationalComplexity} onChange={v => setScalability({ ...scalability, operationalComplexity: v })} />
+                <ScoreSelector label="Dependence on Founder" description="10 = runs without the founder, 1 = founder does everything" lowLabel="Founder-dependent" highLabel="Runs without founder" value={scalability.dependenceOnFounder} onChange={v => setScalability({ ...scalability, dependenceOnFounder: v })} />
                 <ScoreSelector label="Network Effects" value={scalability.networkEffects} onChange={v => setScalability({ ...scalability, networkEffects: v })} />
                 <hr className="my-5 border-slate-200" />
                 <h3 className="font-medium text-slate-800 mb-3">Risk Assessment</h3>

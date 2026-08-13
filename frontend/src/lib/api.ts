@@ -14,6 +14,16 @@ async function request(path: string, options: RequestInit = {}) {
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
+    // A 401 on an authenticated request means the stored token is expired or
+    // revoked — without this, every page just renders "Request failed" until
+    // the user figures out they need to log in again. Login attempts also
+    // return 401 but carry no token, so they fall through to normal handling.
+    if (res.status === 401 && token && typeof window !== 'undefined') {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      const next = encodeURIComponent(window.location.pathname);
+      window.location.href = `/auth/login?next=${next}`;
+    }
     const err = new Error(data.message || 'Request failed');
     Object.assign(err, data);
     throw err;

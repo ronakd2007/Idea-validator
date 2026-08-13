@@ -37,8 +37,11 @@ export class AdminService {
   }
 
   async getPendingValidators() {
+    // rejectedAt keeps rejected applications out of this queue permanently —
+    // rejection used to only deactivate the user, so the profile (still
+    // isApproved: false) reappeared here on every page load.
     return this.prisma.validatorProfile.findMany({
-      where: { isApproved: false },
+      where: { isApproved: false, rejectedAt: null },
       include: { user: { select: { id: true, name: true, email: true, createdAt: true } } },
       orderBy: { createdAt: 'desc' },
     });
@@ -64,6 +67,10 @@ export class AdminService {
       include: { user: { select: { id: true, name: true } } },
     });
     if (!profile) throw new NotFoundException('Validator profile not found');
+    await this.prisma.validatorProfile.update({
+      where: { id: validatorProfileId },
+      data: { rejectedAt: new Date() },
+    });
     await this.prisma.user.update({
       where: { id: profile.userId },
       data: { isActive: false },

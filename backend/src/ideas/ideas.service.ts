@@ -64,7 +64,7 @@ export class IdeasService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, requester: { userId: string; role: string }) {
     const idea = await this.prisma.idea.findUnique({
       where: { id },
       include: {
@@ -74,8 +74,26 @@ export class IdeasService {
       },
     });
     if (!idea) throw new NotFoundException('Idea not found');
+
+    // A full pitch (problem, solution, revenue model, team LinkedIn profiles)
+    // is confidential: founders see only their own ideas, validators only see
+    // ideas that are live for review. NotFound, not Forbidden, so the check
+    // never confirms to outsiders that a given idea id exists.
+    if (requester.role === 'FOUNDER' && idea.founderId !== requester.userId) {
+      throw new NotFoundException('Idea not found');
+    }
+    if (requester.role === 'VALIDATOR' && idea.paymentStatus !== 'COMPLETED') {
+      throw new NotFoundException('Idea not found');
+    }
     return idea;
   }
+
+  // The dashboard unlocks once the idea has enough validations to be
+  // meaningful OR enough time has passed — whichever comes first. The timer
+  // starts when payment completes (that's when validators can first see it),
+  // falling back to submission time for anything without a completed payment.
+  private static readonly UNLOCK_VALIDATION_COUNT = 3;
+  private static readonly UNLOCK_AFTER_HOURS = 48;
 
   async getDashboard(ideaId: string, founderId: string) {
     const idea = await this.prisma.idea.findUnique({
@@ -83,6 +101,7 @@ export class IdeasService {
       include: {
         founder: { select: { id: true, name: true } },
         selfAssessment: true,
+        payments: { where: { status: 'COMPLETED' }, orderBy: { createdAt: 'asc' }, take: 1 },
         validations: {
           include: {
             validator: { select: { id: true, name: true, email: true, phone: true, validatorProfile: true } },
@@ -106,6 +125,23 @@ export class IdeasService {
 
     if (!idea) throw new NotFoundException('Idea not found');
     if (idea.founderId !== founderId) throw new ForbiddenException('Access denied');
+
+    const liveSince = idea.payments[0]?.createdAt ?? idea.submittedAt;
+    const unlockAt = new Date(liveSince.getTime() + IdeasService.UNLOCK_AFTER_HOURS * 60 * 60 * 1000);
+    const unlocked =
+      idea.validations.length >= IdeasService.UNLOCK_VALIDATION_COUNT || Date.now() >= unlockAt.getTime();
+
+    if (!unlocked) {
+      // Locked: return progress only — never the validations themselves, so
+      // the gate can't be bypassed by reading the raw response.
+      return {
+        available: false,
+        unlockAt,
+        validationCount: idea.validations.length,
+        validationsNeeded: IdeasService.UNLOCK_VALIDATION_COUNT,
+        idea: { id: idea.id, title: idea.title, submittedAt: idea.submittedAt },
+      };
+    }
 
     const { label, role } = await this.actor(founderId);
     void this.activity.log({

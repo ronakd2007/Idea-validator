@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Param, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -25,11 +25,5 @@ export class PaymentController {
   @Get('history')
   getHistory(@Request() req) {
     return this.paymentService.getPaymentHistory(req.user.userId);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post('razorpay/verify')
-  verifyRazorpay(@Body() body: any) {
-    return this.paymentService.verifyRazorpay(body);
   }
 }

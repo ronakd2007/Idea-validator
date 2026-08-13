@@ -105,7 +105,7 @@ function SubmitIdeaInner() {
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-10 w-full max-w-md text-center">
           <div className="text-5xl mb-4">🎉</div>
           <h2 className="text-2xl font-bold text-slate-900 mb-3">Idea Submitted!</h2>
-          <p className="text-slate-500 mb-6">Your idea is now live for validators to review. Your dashboard will be available in 48 hours.</p>
+          <p className="text-slate-500 mb-6">Your idea is now live for validators to review. Your dashboard unlocks after 3 expert validations or 48 hours — whichever comes first.</p>
           <button onClick={() => router.push('/founder/ideas')}
             className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-blue-700">
             View My Ideas
@@ -116,7 +116,7 @@ function SubmitIdeaInner() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-10">
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-slate-900">Submit Your Business Idea</h1>
         <p className="text-slate-500 mt-1">Complete all sections to get expert validation</p>
