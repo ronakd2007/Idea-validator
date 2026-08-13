@@ -9,10 +9,10 @@ import IdeaBulb from './IdeaBulb';
 import OrbitNodes from './OrbitNodes';
 import ParticleField from './ParticleField';
 import SceneText from './SceneText';
+import HeroFeatures from './HeroFeatures';
 import ScoreReveal from './ScoreReveal';
 import InsightDashboard from './InsightDashboard';
 import FinalMoment from './FinalMoment';
-import StageIndicator from './StageIndicator';
 import { useDeviceCapabilities } from './useDeviceCapabilities';
 import { TOTAL_SCROLL_VH } from './sceneConfig';
 
@@ -51,10 +51,10 @@ export default function IdeaValidatorLanding() {
       />
 
       <SceneText />
+      <HeroFeatures />
       <ScoreReveal />
       <InsightDashboard />
       <FinalMoment />
-      <StageIndicator />
 
       <ScrollController />
     </div>

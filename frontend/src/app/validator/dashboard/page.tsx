@@ -32,7 +32,7 @@ export default function ValidatorDashboardPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-8 py-10">
+    <div className="max-w-5xl mx-auto px-4 sm:px-8 py-10">
       {/* Top header */}
       <div className="flex items-center justify-between mb-8">
         <div>

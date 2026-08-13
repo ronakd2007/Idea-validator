@@ -71,7 +71,7 @@ function SurveyBuilderInner() {
   }, []);
 
   if (loading) return <div className="flex items-center justify-center min-h-screen"><div className="text-slate-500">Loading survey...</div></div>;
-  if (error || !survey) return <div className="max-w-2xl mx-auto px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error || 'Survey not found'}</div></div>;
+  if (error || !survey) return <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error || 'Survey not found'}</div></div>;
 
   const patchQuestion = (id: string, patch: any) => {
     setSurvey({ ...survey, questions: survey.questions.map((q) => (q.id === id ? { ...q, ...patch } : q)) });
@@ -235,7 +235,7 @@ function SurveyBuilderInner() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-8">
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
       <div className="flex items-center justify-between flex-wrap gap-3 mb-6 pb-4 border-b border-slate-200">
         <Link
           href={survey.ideaId ? `/founder/ideas/${survey.ideaId}/dashboard` : '/founder/surveys'}
@@ -504,7 +504,7 @@ function SurveyBuilderInner() {
               + Add Question
             </button>
             {addMenuOpen && (
-              <div className="absolute bottom-full mb-2 bg-white border border-slate-200 rounded-xl shadow-lg py-2 w-56 z-10">
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white border border-slate-200 rounded-xl shadow-lg py-2 w-56 z-20">
                 {QUESTION_TYPES.map((t) => (
                   <button
                     key={t.value}

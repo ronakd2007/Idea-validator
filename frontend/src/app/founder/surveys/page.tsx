@@ -78,7 +78,7 @@ export default function MySurveysPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-10">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">My Surveys</h1>
@@ -175,7 +175,7 @@ export default function MySurveysPage() {
       <div className="space-y-4">
         {surveys.map((s) => (
           <div key={s.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex items-start justify-between gap-4 flex-wrap">
-            <div className="flex-1 min-w-[240px]">
+            <div className="flex-1 min-w-0 sm:min-w-[240px]">
               <h3 className="text-lg font-semibold text-slate-900">{s.title || 'Untitled survey'}</h3>
               <p className="text-sm text-slate-500 mt-0.5">{s.idea?.title || 'Standalone survey'}</p>
               <div className="flex items-center gap-2 mt-3 flex-wrap">

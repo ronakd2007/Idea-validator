@@ -38,7 +38,7 @@ export default function AdminUsersPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-10">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
       <div className="flex items-center gap-4 mb-8">
         <Link href="/admin" className="text-slate-500 hover:text-slate-700">← Back</Link>
         <div>
@@ -58,8 +58,10 @@ export default function AdminUsersPage() {
 
       {loading && <div className="text-center py-20 text-slate-500">Loading...</div>}
 
-      <div className="bg-white border border-slate-200 shadow-sm rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
+      {/* overflow-x-auto, not overflow-hidden — six columns exceed a phone's width,
+          and hidden clipped the Actions column with no way to reach it. */}
+      <div className="bg-white border border-slate-200 shadow-sm rounded-xl overflow-x-auto">
+        <table className="w-full text-sm min-w-[820px]">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
               <th className="text-left px-6 py-3 font-medium text-slate-500">Name</th>

@@ -38,13 +38,15 @@ function SummaryCard({ label, value, sub }: { label: string; value: string; sub?
 function DistributionBar({ label, count, pct, imageUrl }: { label: string; count: number; pct: number; imageUrl?: string | null }) {
   return (
     <div className="mb-2.5">
-      <div className="flex justify-between text-sm mb-1">
-        <span className="text-slate-700 truncate pr-2 flex items-center gap-2">
+      <div className="flex justify-between text-sm mb-1 gap-2">
+        {/* truncate has to sit on the text itself — ellipsis never applies to a
+            flex container, so it silently did nothing on the wrapper. */}
+        <span className="text-slate-700 flex items-center gap-2 min-w-0">
           {imageUrl && (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={imageUrl} alt="" loading="lazy" className="w-8 h-6 object-cover rounded border border-slate-200 shrink-0" />
           )}
-          {label}
+          <span className="truncate">{label}</span>
         </span>
         <span className="text-slate-500 shrink-0 tabular-nums">{count} &middot; {pct.toFixed(0)}%</span>
       </div>
@@ -157,12 +159,12 @@ export default function SurveyAnalyticsPage() {
   };
 
   if (loading && !data) return <div className="flex items-center justify-center min-h-screen"><div className="text-slate-500">Loading analytics...</div></div>;
-  if (error || !data) return <div className="max-w-2xl mx-auto px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error || 'Not found'}</div></div>;
+  if (error || !data) return <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error || 'Not found'}</div></div>;
 
   const { survey, summary, trend, activity, time, questions, dropOff, quality, eligibleOutcomeQuestions, eligibleSegmentQuestions, segmentation, impact, abResults, insights, sampleSizeLabel } = data;
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-8">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
       <div className="flex items-center justify-between flex-wrap gap-3 mb-2">
         <Link href={`/founder/surveys/${surveyId}/edit`} className="text-sm text-slate-500 hover:text-slate-800">&larr; Back to Survey</Link>
         <button onClick={exportCsv} disabled={exporting} className="text-sm bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:border-slate-300 disabled:opacity-60">

@@ -32,9 +32,9 @@ export default function AdminUserDetailPage() {
 
   if (!allowed) return null;
 
-  if (loading) return <div className="max-w-6xl mx-auto px-6 py-20 text-center text-slate-500">Loading...</div>;
+  if (loading) return <div className="max-w-6xl mx-auto px-4 sm:px-6 py-20 text-center text-slate-500">Loading...</div>;
   if (error) return (
-    <div className="max-w-6xl mx-auto px-6 py-20 text-center">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-20 text-center">
       <p className="text-red-600 mb-4">{error}</p>
       <Link href="/admin/users" className="text-blue-600 hover:text-blue-700">← Back to users</Link>
     </div>
@@ -52,7 +52,7 @@ export default function AdminUserDetailPage() {
   ];
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-10">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
       <div className="flex items-center gap-4 mb-6">
         <Link href="/admin/users" className="text-slate-500 hover:text-slate-700">← Back</Link>
         <div>
@@ -197,8 +197,8 @@ export default function AdminUserDetailPage() {
       )}
 
       {tab === 'Activity' && (
-        <div className="bg-white border border-slate-200 shadow-sm rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-white border border-slate-200 shadow-sm rounded-xl overflow-x-auto">
+          <table className="w-full text-sm min-w-[560px]">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className="text-left px-6 py-3 font-medium text-slate-500">Activity</th>
@@ -223,8 +223,11 @@ export default function AdminUserDetailPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-slate-600 max-w-[260px] truncate">
-                      {href ? <Link href={href} className="text-blue-600 hover:text-blue-700">{a.targetLabel || '—'}</Link> : (a.targetLabel || '—')}
+                    {/* truncate needs a block box — a <td> ignores it */}
+                    <td className="px-6 py-4 text-slate-600">
+                      <div className="max-w-[260px] truncate">
+                        {href ? <Link href={href} className="text-blue-600 hover:text-blue-700">{a.targetLabel || '—'}</Link> : (a.targetLabel || '—')}
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-slate-500 whitespace-nowrap" title={formatDateTime(a.createdAt)}>
                       {timeAgo(a.createdAt)}

@@ -71,13 +71,13 @@ function SurveyResponsesInner() {
   }, [surveyId, page, qualityFilter]);
 
   if (loading && !survey) return <div className="flex items-center justify-center min-h-screen"><div className="text-slate-500">Loading responses...</div></div>;
-  if (error || !survey) return <div className="max-w-2xl mx-auto px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error || 'Survey not found'}</div></div>;
+  if (error || !survey) return <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error || 'Survey not found'}</div></div>;
 
   const selected = responses.find((r) => r.id === selectedId);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
       <div className="flex items-center justify-between flex-wrap gap-3 mb-8 pb-4 border-b border-slate-200">
         <Link href={`/founder/surveys/${surveyId}/edit`} className="text-sm text-slate-500 hover:text-slate-800">&larr; Back to Survey</Link>
         <Link href={`/founder/surveys/${surveyId}/analytics`} className="text-sm text-blue-600 hover:text-blue-700 font-medium">View Analytics &rarr;</Link>

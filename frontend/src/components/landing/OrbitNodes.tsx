@@ -275,7 +275,9 @@ function FrameworkNode({ index }: { index: number }) {
       <mesh ref={refs.shard}>
         <icosahedronGeometry args={[1, 0]} />
         <meshStandardMaterial ref={refs.mat} transparent opacity={0} roughness={0.25} metalness={0.25} />
-        <Html center distanceFactor={9} style={{ pointerEvents: 'none' }}>
+        {/* distanceFactor 7 (was 9) — these labels rendered large enough to
+            reach into the headline column even after the ring was tightened */}
+        <Html center distanceFactor={7} style={{ pointerEvents: 'none' }}>
           <div ref={refs.labelEl} style={{ opacity: 0 }} className="bg-white/85 px-2 py-1 rounded-md text-center transition-opacity">
             <div className="text-[10px] font-semibold tracking-wide text-slate-800 uppercase whitespace-nowrap">{fw.name}</div>
             <span ref={scoreEl} className="text-[9px] text-slate-500">

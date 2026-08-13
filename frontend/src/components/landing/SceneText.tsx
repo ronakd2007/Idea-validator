@@ -1,20 +1,21 @@
 'use client';
 import Link from 'next/link';
 import { useScrollProgress } from './useScrollProgress';
-import { STAGES, type StageText } from './sceneConfig';
+import { STAGES, TEXT_FADE, type StageText } from './sceneConfig';
 import { windowActivation, lerp } from './utils';
 
 const SIDE_CLASSES: Record<StageText['side'], string> = {
   center: 'items-center justify-center text-center left-0 right-0',
-  left: 'items-center justify-start text-left left-0 w-full md:w-[52%] pl-6 md:pl-16',
-  right: 'items-center justify-end text-right left-0 w-full md:w-[52%] md:ml-auto pr-6 md:pr-16',
+  // 46%, not 52% — the side columns used to run past the halfway line and meet
+  // the bulb's node cluster coming the other way.
+  // narrows again at xl, where HeroFeatures needs the gutter between the
+  // headline column and the bulb for its left-hand callouts
+  left: 'items-center justify-start text-left left-0 w-full md:w-[46%] xl:w-[38%] pl-6 md:pl-16',
+  right: 'items-center justify-end text-right left-0 w-full md:w-[46%] xl:w-[38%] md:ml-auto pr-6 md:pr-16',
   top: 'items-start justify-center text-center left-0 right-0 pt-24 md:pt-32',
 };
 
-function TextBlock({ stage, progress }: { stage: StageText; progress: number }) {
-  const activation = windowActivation(progress, stage.range);
-  if (activation <= 0.001) return null;
-
+function TextBlock({ stage, activation }: { stage: StageText; activation: number }) {
   const translateY = lerp(16, 0, activation);
   // 'center' and 'top' share the same horizontal zone as the bulb at those
   // points in the story — a soft frosted panel behind the text guarantees
@@ -77,12 +78,21 @@ function TextBlock({ stage, progress }: { stage: StageText; progress: number }) 
 export default function SceneText() {
   const progress = useScrollProgress();
 
+  // Only the single most-active stage is ever mounted. Every TextBlock is its
+  // own `fixed inset-0` layer, so two live at once is literally two headlines
+  // stacked in the same box — mapping the whole list was what produced the
+  // doubled text through each transition.
+  let winner: { stage: StageText; activation: number } | null = null;
+  for (const stage of STAGES) {
+    if (stage.headline.length === 0) continue;
+    const activation = windowActivation(progress, stage.range, TEXT_FADE, TEXT_FADE);
+    if (activation > (winner?.activation ?? 0.001)) winner = { stage, activation };
+  }
+
   return (
     <>
       <div className="fixed inset-0 bg-gradient-to-b from-white/45 via-transparent to-white/55 pointer-events-none" style={{ zIndex: 15 }} />
-      {STAGES.filter((s) => s.headline.length > 0).map((stage) => (
-        <TextBlock key={stage.id} stage={stage} progress={progress} />
-      ))}
+      {winner && <TextBlock key={winner.stage.id} stage={winner.stage} activation={winner.activation} />}
     </>
   );
 }

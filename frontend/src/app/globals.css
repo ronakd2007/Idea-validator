@@ -1,12 +1,22 @@
 @import "tailwindcss";
 
+/* No font-family here — layout.tsx puts next/font's Inter class on <body>, and a
+   class selector outranks this element selector, so any value set here is dead. */
 body {
   background: #f8fafc;
   color: #0f172a;
-  font-family: Arial, Helvetica, sans-serif;
 }
 
 input, textarea, select {
   color: #0f172a;
   background-color: #ffffff;
+}
+
+/* iOS Safari zooms the viewport when a focused control renders below 16px, and
+   most inputs in this app are text-sm (14px). Lift it only on small screens so
+   the desktop type rhythm is untouched. */
+@media (max-width: 640px) {
+  input, textarea, select {
+    font-size: 16px;
+  }
 }

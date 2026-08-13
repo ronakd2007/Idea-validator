@@ -77,7 +77,7 @@ export default function AdminActivityPage() {
   if (!allowed) return null;
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-10">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
       <div className="flex items-center justify-between gap-4 mb-8 flex-wrap">
         <div className="flex items-center gap-4">
           <Link href="/admin" className="text-slate-500 hover:text-slate-700">← Back</Link>
@@ -100,7 +100,7 @@ export default function AdminActivityPage() {
             <div className="text-xs text-slate-500 mt-1">{s.label}</div>
           </div>
         ))}
-        {!summary && <div className="col-span-6 text-slate-500 text-sm">Loading summary...</div>}
+        {!summary && <div className="col-span-2 md:col-span-6 text-slate-500 text-sm">Loading summary...</div>}
       </div>
 
       <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4 mb-6 space-y-3">
@@ -144,7 +144,7 @@ export default function AdminActivityPage() {
         <>
           <div className="bg-white border border-slate-200 shadow-sm rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm min-w-[860px]">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
                     <th className="text-left px-6 py-3 font-medium text-slate-500">User</th>
@@ -183,12 +183,16 @@ export default function AdminActivityPage() {
                             </span>
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-slate-600 max-w-[240px] truncate">
-                          {href ? (
-                            <Link href={href} onClick={(e) => e.stopPropagation()} className="text-blue-600 hover:text-blue-700">
-                              {a.targetLabel || '—'}
-                            </Link>
-                          ) : (a.targetLabel || '—')}
+                        {/* truncate needs a block box — on a <td> the auto table
+                            layout treats max-width as a hint and drops both. */}
+                        <td className="px-6 py-4 text-slate-600">
+                          <div className="max-w-[240px] truncate">
+                            {href ? (
+                              <Link href={href} onClick={(e) => e.stopPropagation()} className="text-blue-600 hover:text-blue-700">
+                                {a.targetLabel || '—'}
+                              </Link>
+                            ) : (a.targetLabel || '—')}
+                          </div>
                         </td>
                         <td className="px-6 py-4 text-slate-500 whitespace-nowrap">{timeAgo(a.createdAt)}</td>
                       </tr>

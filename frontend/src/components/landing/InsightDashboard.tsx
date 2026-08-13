@@ -1,6 +1,6 @@
 'use client';
 import { useScrollProgress } from './useScrollProgress';
-import { INSIGHTS_RANGE } from './sceneConfig';
+import { INSIGHTS_RANGE, TEXT_FADE } from './sceneConfig';
 import { windowActivation, lerp } from './utils';
 
 const STRENGTHS = ['Strong market opportunity', 'High innovation score', 'Clear customer problem'];
@@ -31,7 +31,7 @@ function Column({ title, items, tone }: { title: string; items: string[]; tone: 
  */
 export default function InsightDashboard() {
   const progress = useScrollProgress();
-  const activation = windowActivation(progress, INSIGHTS_RANGE, 0.02, 0.02);
+  const activation = windowActivation(progress, INSIGHTS_RANGE, TEXT_FADE, TEXT_FADE);
   if (activation <= 0.001) return null;
 
   const translateX = lerp(24, 0, activation);

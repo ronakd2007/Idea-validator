@@ -56,9 +56,9 @@ export default function AdminIdeaDetailPage() {
   };
 
   if (!allowed) return null;
-  if (loading) return <div className="max-w-6xl mx-auto px-6 py-20 text-center text-slate-500">Loading...</div>;
+  if (loading) return <div className="max-w-6xl mx-auto px-4 sm:px-6 py-20 text-center text-slate-500">Loading...</div>;
   if (error) return (
-    <div className="max-w-6xl mx-auto px-6 py-20 text-center">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-20 text-center">
       <p className="text-red-600 mb-4">{error}</p>
       <Link href="/admin/ideas" className="text-blue-600 hover:text-blue-700">← Back to ideas</Link>
     </div>
@@ -75,7 +75,7 @@ export default function AdminIdeaDetailPage() {
     .filter((c) => c.score > 0);
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-10">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
       <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
         <div className="flex items-center gap-4">
           <Link href="/admin/ideas" className="text-slate-500 hover:text-slate-700">← Back</Link>
@@ -255,8 +255,8 @@ export default function AdminIdeaDetailPage() {
       )}
 
       {tab === 'Activity' && (
-        <div className="bg-white border border-slate-200 shadow-sm rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-white border border-slate-200 shadow-sm rounded-xl overflow-x-auto">
+          <table className="w-full text-sm min-w-[560px]">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className="text-left px-6 py-3 font-medium text-slate-500">User</th>

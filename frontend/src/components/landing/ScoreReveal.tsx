@@ -1,6 +1,6 @@
 'use client';
 import { useScrollProgress } from './useScrollProgress';
-import { SCORE_RANGE, FINAL_SCORE, FRAMEWORKS } from './sceneConfig';
+import { SCORE_RANGE, FINAL_SCORE, FRAMEWORKS, TEXT_FADE } from './sceneConfig';
 import { clamp, lerp, windowActivation } from './utils';
 
 const BREAKDOWN = ['Market Opportunity', 'Innovation', 'Feasibility', 'Revenue Potential', 'Risk Assessment'];
@@ -17,7 +17,7 @@ function scoreFor(name: string) {
  */
 export default function ScoreReveal() {
   const progress = useScrollProgress();
-  const activation = windowActivation(progress, SCORE_RANGE, 0.02, 0.02);
+  const activation = windowActivation(progress, SCORE_RANGE, TEXT_FADE, TEXT_FADE);
   if (activation <= 0.001) return null;
 
   const [start, end] = SCORE_RANGE;
@@ -31,7 +31,7 @@ export default function ScoreReveal() {
           story — a frosted panel keeps the score readable without moving
           the bulb off-center, which is the point of this moment */}
       <div className="text-center bg-white/65 backdrop-blur-md rounded-3xl px-10 py-10 md:px-16 md:py-12">
-        <p className="text-blue-600/90 text-xs font-semibold tracking-[0.3em] uppercase mb-6">04 — VALIDATION SCORE</p>
+        <p className="text-blue-600/90 text-xs font-semibold tracking-[0.3em] uppercase mb-6">VALIDATION SCORE</p>
         <div
           className="text-8xl md:text-[10rem] font-semibold text-blue-700 leading-none tabular-nums"
           style={{ textShadow: '0 8px 30px rgba(37,99,235,0.18)' }}

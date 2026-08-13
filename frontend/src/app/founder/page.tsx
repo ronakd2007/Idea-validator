@@ -15,7 +15,7 @@ export default function FounderHubPage() {
   }, [router]);
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-16">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-16">
       <div className="text-center mb-12">
         <h1 className="text-3xl font-bold text-slate-900">{name ? `Welcome back, ${name}` : 'Welcome back'}</h1>
         <p className="text-slate-500 mt-2">How do you want to validate your idea today?</p>

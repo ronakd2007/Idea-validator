@@ -30,7 +30,9 @@ export default function ScoreSelector({
       </div>
       {description && <p className="text-xs text-slate-500 mb-3">{description}</p>}
 
-      <div className="grid grid-cols-10 gap-1.5" role="radiogroup" aria-label={label}>
+      {/* Two rows of five on phones — ten across leaves ~20px per button, which
+          clips the "10" label. Full row returns at sm. */}
+      <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5" role="radiogroup" aria-label={label}>
         {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
           <button
             key={n}
@@ -51,7 +53,8 @@ export default function ScoreSelector({
 
       <div className="flex justify-between mt-1.5 text-[11px] text-slate-400">
         <span>{lowLabel}</span>
-        <span>Average</span>
+        {/* the three labels collide below ~200px of track */}
+        <span className="hidden sm:inline">Average</span>
         <span>{highLabel}</span>
       </div>
     </div>

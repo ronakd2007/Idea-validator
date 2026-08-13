@@ -9,7 +9,8 @@ import { windowActivation } from './utils';
  */
 export default function FinalMoment() {
   const progress = useScrollProgress();
-  const activation = windowActivation(progress, FINAL_MOMENT_RANGE, 0.006, 0.006);
+  // tighter than TEXT_FADE — this window butts directly against the decision CTA
+  const activation = windowActivation(progress, FINAL_MOMENT_RANGE, 0.002, 0.002);
   if (activation <= 0.001) return null;
 
   return (

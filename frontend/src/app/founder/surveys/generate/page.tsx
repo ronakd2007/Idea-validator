@@ -74,7 +74,7 @@ export default function AiBuilderPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-10">
+    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
       <Link href="/founder/surveys" className="text-sm text-slate-500 hover:text-slate-800">&larr; Back to My Surveys</Link>
 
       <div className="mt-4 mb-8">

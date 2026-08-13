@@ -37,7 +37,7 @@ export default function AdminValidatorsPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-10">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
       <div className="flex items-center gap-4 mb-8">
         <Link href="/admin" className="text-slate-500 hover:text-slate-700">← Back</Link>
         <div>

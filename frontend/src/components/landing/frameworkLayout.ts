@@ -12,10 +12,13 @@ import { FRAMEWORKS, FRAMEWORKS_RANGE } from './sceneConfig';
 export function frameworkNodePosition(index: number): Vec3 {
   const total = FRAMEWORKS.length;
   const angle = (index / total) * Math.PI * 2 - Math.PI / 2;
-  const radius = 2.35;
+  // 1.45, not 2.35 — at the old radius the ring was far wider than the bulb, so
+  // node labels ("RISK ASSESSMENT 42/100") landed on top of the DOM headline
+  // column. The cluster now stays visually attached to the bulb it describes.
+  const radius = 1.45;
   const x = Math.cos(angle) * radius;
   const z = Math.sin(angle) * radius * 0.6;
-  const y = Math.sin(index * 1.7) * 0.55 + Math.cos(index * 0.9) * 0.15;
+  const y = Math.sin(index * 1.7) * 0.38 + Math.cos(index * 0.9) * 0.1;
   return [x, y, z];
 }
 

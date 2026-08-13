@@ -16,20 +16,27 @@ export const CAMERA_KEYFRAMES: { t: number; pos: Vec3; look: Vec3 }[] = [
   // Hero: look target is offset LEFT of the bulb's actual position, which
   // pushes the bulb to the right third of frame (rule-of-thirds) — the
   // headline gets the clear left half instead of sitting behind the bulb.
-  { t: 0.0, pos: [0, 0.2, 9.2], look: [0.35, -0.02, 0] },
-  { t: 0.08, pos: [0, 0.2, 9.2], look: [0.35, -0.02, 0] }, // HOLD — headline reads
+  // look.x is well left of the bulb's x=1.5, which throws the bulb into the
+  // right third — far enough that HeroFeatures' two callout columns get a clear
+  // gutter on each side of it.
+  { t: 0.0, pos: [0, 0.2, 9.2], look: [-0.7, -0.02, 0] },
+  { t: 0.08, pos: [0, 0.2, 9.2], look: [-0.7, -0.02, 0] }, // HOLD — headline reads
   { t: 0.18, pos: [0.15, 0.3, 7.0], look: [0.55, 0.1, 0] }, // dolly in, bulb stays right-framed
   { t: 0.22, pos: [0.15, 0.3, 7.0], look: [0.55, 0.1, 0] }, // HOLD — idea components
   { t: 0.3, pos: [0.1, 0.35, 6.4], look: [0.5, 0.15, 0] },
   { t: 0.32, pos: [0.1, 0.35, 6.4], look: [0.5, 0.15, 0] }, // HOLD — submit
   { t: 0.4, pos: [-0.1, 0.3, 6.1], look: [-0.5, 0.1, 0] }, // tracking bulb left
   { t: 0.45, pos: [-0.1, 0.3, 6.1], look: [-0.5, 0.1, 0] }, // HOLD — experts
-  { t: 0.5, pos: [0, 0.35, 5.9], look: [0, 0.5, 0] }, // recenter — frameworks begin; look target raised so the bulb sits lower in frame, leaving headroom for the top-positioned heading
-  { t: 0.64, pos: [0, 0.3, 5.6], look: [0, 0.5, 0] }, // slow settle through framework activations
-  { t: 0.7, pos: [0.3, 0.15, 5.1], look: [0.1, 0, 0] },
-  { t: 0.75, pos: [0.3, 0.15, 5.1], look: [0.1, 0, 0] }, // HOLD — weaknesses visible
-  { t: 0.8, pos: [-0.2, 0.2, 4.9], look: [-0.05, 0.05, 0] },
-  { t: 0.85, pos: [-0.2, 0.2, 4.9], look: [-0.05, 0.05, 0] }, // HOLD — improved
+  // From here the bulb sits at world origin, so the look target alone decides
+  // which side of frame it occupies: looking LEFT of it pushes it right, and
+  // vice versa. Each of these mirrors its stage's text side so the bulb and the
+  // headline never share a half of the screen.
+  { t: 0.5, pos: [0, 0.35, 5.9], look: [-0.75, 0.12, 0] }, // frameworks — text left, bulb right
+  { t: 0.64, pos: [0, 0.3, 5.6], look: [-0.75, 0.12, 0] }, // slow settle through framework activations
+  { t: 0.7, pos: [0.3, 0.15, 5.1], look: [0.7, 0.02, 0] }, // weakness — text right, bulb left
+  { t: 0.75, pos: [0.3, 0.15, 5.1], look: [0.7, 0.02, 0] }, // HOLD — weaknesses visible
+  { t: 0.8, pos: [-0.2, 0.2, 4.9], look: [-0.7, 0.05, 0] }, // improvement — text left, bulb right
+  { t: 0.85, pos: [-0.2, 0.2, 4.9], look: [-0.7, 0.05, 0] }, // HOLD — improved
   { t: 0.89, pos: [0, 0.08, 3.5], look: [0, 0.1, 0] }, // push in — convergence
   { t: 0.93, pos: [0, 0.08, 3.5], look: [0, 0.1, 0] }, // HOLD — score
   { t: 0.95, pos: [-0.55, 0.2, 4.3], look: [-0.4, 0.15, 0] }, // shift — insights panel
@@ -61,22 +68,37 @@ export const BULB_POSITION_KEYFRAMES: { t: number; pos: Vec3 }[] = [
   { t: 1.0, pos: [0, 0, 0] }, // HOLD — final
 ];
 
+// Hero-only emphasis: the reference hero shows the bulb filling roughly half the
+// viewport height, where the scene's natural framing put it at about a quarter.
+// Scaling the bulb (rather than dollying the camera) keeps the rest of the
+// timeline's framing untouched — it eases back to 1.0 before the components stage.
+export const BULB_SCALE_KEYFRAMES: { t: number; scale: number }[] = [
+  { t: 0.0, scale: 1.75 },
+  { t: 0.08, scale: 1.75 },
+  { t: 0.18, scale: 1.0 },
+  { t: 1.0, scale: 1.0 },
+];
+
 // ---------------------------------------------------------------------------
 // Bulb brightness / tint / instability. instability drives the crack overlay
 // and jitter during the weakness stage; it stays 0 everywhere else.
 // ---------------------------------------------------------------------------
 export const BULB_TIMELINE: { t: number; brightness: number; tint: string; instability: number }[] = [
-  { t: 0.0, brightness: 0.08, tint: '#1e3a5f', instability: 0 }, // almost monochrome, barely-there navy glow
-  { t: 0.1, brightness: 0.1, tint: '#1e3a5f', instability: 0 },
-  { t: 0.2, brightness: 0.16, tint: '#2b4d7a', instability: 0 }, // idea takes shape — blue introduced gradually
-  { t: 0.3, brightness: 0.22, tint: '#2b4d7a', instability: 0 },
-  { t: 0.45, brightness: 0.3, tint: '#3b82f6', instability: 0 }, // experts arrive — electric blue established
-  { t: 0.5, brightness: 0.38, tint: '#3b82f6', instability: 0 },
-  { t: 0.65, brightness: 0.56, tint: '#60a5fa', instability: 0 }, // frameworks validated — brighter blue
-  { t: 0.68, brightness: 0.4, tint: '#c99a5a', instability: 0.85 }, // weakness — restrained amber, not red
-  { t: 0.75, brightness: 0.38, tint: '#c99a5a', instability: 0.9 },
-  { t: 0.8, brightness: 0.56, tint: '#3b82f6', instability: 0.25 }, // improving — amber recovers to blue
-  { t: 0.85, brightness: 0.68, tint: '#60a5fa', instability: 0 },
+  // Hero matches the reference: a lit bulb with a bright blue-white filament,
+  // not the near-dark one this timeline originally opened on. The whole early
+  // curve was lifted with it so brightness still climbs into the score and the
+  // weakness dip still reads — the arc is shallower, not removed.
+  { t: 0.0, brightness: 0.5, tint: '#8fc0ff', instability: 0 },
+  { t: 0.1, brightness: 0.52, tint: '#8fc0ff', instability: 0 },
+  { t: 0.2, brightness: 0.55, tint: '#7db4ff', instability: 0 }, // idea takes shape
+  { t: 0.3, brightness: 0.58, tint: '#60a5fa', instability: 0 },
+  { t: 0.45, brightness: 0.62, tint: '#60a5fa', instability: 0 }, // experts arrive
+  { t: 0.5, brightness: 0.66, tint: '#60a5fa', instability: 0 },
+  { t: 0.65, brightness: 0.72, tint: '#60a5fa', instability: 0 }, // frameworks validated — brighter blue
+  { t: 0.68, brightness: 0.5, tint: '#c99a5a', instability: 0.85 }, // weakness — restrained amber, not red
+  { t: 0.75, brightness: 0.48, tint: '#c99a5a', instability: 0.9 },
+  { t: 0.8, brightness: 0.7, tint: '#3b82f6', instability: 0.25 }, // improving — amber recovers to blue
+  { t: 0.85, brightness: 0.8, tint: '#60a5fa', instability: 0 },
   { t: 0.89, brightness: 0.85, tint: '#93c5fd', instability: 0 },
   { t: 0.93, brightness: 1.0, tint: '#eaf2ff', instability: 0 }, // score — bright blue-white, the peak
   { t: 1.0, brightness: 0.95, tint: '#dceaff', instability: 0 }, // final — stable soft blue-white
@@ -115,10 +137,19 @@ export const EXPERTS_RANGE: [number, number] = [0.34, 0.44];
 export const FRAMEWORKS_RANGE: [number, number] = [0.45, 0.65];
 export const WEAKNESS_RANGE: [number, number] = [0.65, 0.75];
 export const IMPROVEMENT_RANGE: [number, number] = [0.75, 0.85];
-export const SCORE_RANGE: [number, number] = [0.85, 0.93];
-export const INSIGHTS_RANGE: [number, number] = [0.93, 0.97];
+// The four DOM overlay windows below must stay disjoint once TEXT_FADE is
+// added to each edge — every overlay is a `fixed inset-0` layer, so any two
+// that are simultaneously non-zero render their text on top of each other.
+// Previously SCORE_RANGE and INSIGHTS_RANGE shared the 0.93 boundary, which
+// put both at FULL opacity at that exact point.
+export const SCORE_RANGE: [number, number] = [0.85, 0.922];
+export const INSIGHTS_RANGE: [number, number] = [0.938, 0.959];
 export const FINAL_SCORE = 82;
-export const FINAL_MOMENT_RANGE: [number, number] = [0.988, 1.0];
+export const FINAL_MOMENT_RANGE: [number, number] = [0.994, 1.0];
+
+/** Fade applied to each edge of a DOM text window. Must be <= half the
+ *  smallest gap between consecutive overlay ranges (currently 0.02). */
+export const TEXT_FADE = 0.008;
 
 // ---------------------------------------------------------------------------
 // DOM text overlay content per stage. `side` controls composition so text
@@ -130,7 +161,7 @@ export interface StageText {
   id: string;
   range: [number, number];
   side: TextSide;
-  stageLabel: string;
+  // No numbered stage markers anywhere in the scene — eyebrows are plain labels.
   eyebrow: string;
   headline: string[];
   body: string;
@@ -142,8 +173,7 @@ export const STAGES: StageText[] = [
     id: 'idea',
     range: [0.0, 0.09],
     side: 'left',
-    stageLabel: '01 — IDEA',
-    eyebrow: '01 — THE IDEA',
+    eyebrow: 'THE IDEA',
     headline: ['Validate Before', 'You Build.'],
     body: 'Get structured, expert feedback on your business idea before you invest your time and money.',
     cta: {
@@ -155,7 +185,6 @@ export const STAGES: StageText[] = [
     id: 'components',
     range: [0.11, 0.2],
     side: 'left',
-    stageLabel: '01 — IDEA',
     eyebrow: 'AN IDEA TAKES SHAPE',
     headline: ['Every great business', 'starts with an idea.'],
     body: 'But an idea needs more than excitement — problem, solution, customer, market, and a way to make money.',
@@ -164,7 +193,6 @@ export const STAGES: StageText[] = [
     id: 'submit',
     range: [0.23, 0.31],
     side: 'left',
-    stageLabel: '01 — IDEA',
     eyebrow: 'SUBMIT',
     headline: ['Turn your idea into', 'something we can test.'],
     body: 'A structured submission becomes a testable object — ready to enter the validation system.',
@@ -173,17 +201,17 @@ export const STAGES: StageText[] = [
     id: 'experts',
     range: [0.34, 0.44],
     side: 'right',
-    stageLabel: '02 — EXPERTS',
-    eyebrow: '02 — EXPERT VALIDATION',
+    eyebrow: 'EXPERT VALIDATION',
     headline: ['Your idea shouldn’t be', 'judged by one perspective.'],
     body: 'Industry, market, finance, technology, customer, and founder experts each examine your idea.',
   },
   {
     id: 'frameworks',
     range: [0.5, 0.63],
-    side: 'top',
-    stageLabel: '03 — VALIDATION',
-    eyebrow: '03 — 12 DIMENSIONS',
+    // 'left', not 'top' — a top-centred panel sat directly on top of the bulb
+    // and its node ring. Text owns one side, the bulb owns the other.
+    side: 'left',
+    eyebrow: '12 DIMENSIONS',
     headline: ['One idea.', '12 dimensions of validation.'],
     body: 'Every angle that matters to the market and to investors, scored independently.',
   },
@@ -191,16 +219,14 @@ export const STAGES: StageText[] = [
     id: 'weakness',
     range: [0.66, 0.74],
     side: 'right',
-    stageLabel: '03 — VALIDATION',
     eyebrow: 'HONEST FEEDBACK',
     headline: ['Validation isn’t about', 'proving you’re perfect.'],
     body: 'It’s about discovering, precisely, what needs to change before you build.',
   },
   {
     id: 'improvement',
-    range: [0.76, 0.84],
+    range: [0.76, 0.834], // ends before SCORE_RANGE's faded-in edge at 0.842
     side: 'left',
-    stageLabel: '03 — VALIDATION',
     eyebrow: 'IMPROVEMENT',
     headline: ['Turn feedback', 'into insight.'],
     body: 'Clarify the target customer. Improve the pricing model. Reduce execution risk.',
@@ -209,8 +235,7 @@ export const STAGES: StageText[] = [
     id: 'score',
     range: [0.855, 0.925],
     side: 'center',
-    stageLabel: '04 — INSIGHTS',
-    eyebrow: '04 — VALIDATION SCORE',
+    eyebrow: 'VALIDATION SCORE',
     headline: [],
     body: '',
   },
@@ -220,17 +245,15 @@ export const STAGES: StageText[] = [
     id: 'insights',
     range: [0.935, 0.965],
     side: 'right',
-    stageLabel: '04 — INSIGHTS',
     eyebrow: 'THE FULL PICTURE',
     headline: [],
     body: '',
   },
   {
     id: 'decision',
-    range: [0.975, 0.993],
+    range: [0.975, 0.984], // must clear FINAL_MOMENT_RANGE, which used to start at 0.988
     side: 'center',
-    stageLabel: '05 — DECISION',
-    eyebrow: '05 — THE DECISION',
+    eyebrow: 'THE DECISION',
     headline: ['Build it. Improve it.', 'Or rethink it.'],
     body: 'Make your next decision with evidence, not assumptions.',
     cta: {
@@ -238,12 +261,4 @@ export const STAGES: StageText[] = [
       secondary: { label: 'Become a Validator', href: '/auth/register/validator' },
     },
   },
-];
-
-export const STAGE_INDICATOR = [
-  { t: 0, label: '01 — IDEA' },
-  { t: 0.34, label: '02 — EXPERTS' },
-  { t: 0.45, label: '03 — VALIDATION' },
-  { t: 0.855, label: '04 — INSIGHTS' },
-  { t: 0.975, label: '05 — DECISION' },
 ];
