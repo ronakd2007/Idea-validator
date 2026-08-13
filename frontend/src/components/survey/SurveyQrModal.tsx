@@ -11,6 +11,8 @@ import QRCode from 'qrcode';
 export default function SurveyQrModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
   const [dataUrl, setDataUrl] = useState('');
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState('');
 
   useEffect(() => {
     QRCode.toDataURL(url, {
@@ -30,6 +32,25 @@ export default function SurveyQrModal({ url, title, onClose }: { url: string; ti
   }, [onClose]);
 
   const filename = `${(title || 'survey').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'survey'}-qr.png`;
+
+  // Copies the PNG itself (not the link) so it pastes as an image into chats,
+  // emails and docs. Needs the async Clipboard API with image support — absent
+  // there (e.g. older Firefox), the Download button remains the fallback.
+  const copyImage = async () => {
+    if (!dataUrl) return;
+    setCopyError('');
+    try {
+      if (!navigator.clipboard || typeof ClipboardItem === 'undefined') {
+        throw new Error('unsupported');
+      }
+      const blob = await (await fetch(dataUrl)).blob();
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopyError("Copying images isn't supported in this browser — use Download instead.");
+    }
+  };
 
   return (
     <div
@@ -59,16 +80,25 @@ export default function SurveyQrModal({ url, title, onClose }: { url: string; ti
 
         <p className="text-xs text-slate-400 mt-3 break-all">{url}</p>
 
+        {copyError && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-3 text-left">{copyError}</p>}
+
         <div className="flex gap-2 mt-5">
           <a
             href={dataUrl || undefined}
             download={filename}
             aria-disabled={!dataUrl}
-            className={`flex-1 text-sm px-4 py-2.5 rounded-lg font-semibold text-center ${dataUrl ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 text-slate-400 pointer-events-none'}`}
+            className={`flex-1 text-sm px-3 py-2.5 rounded-lg font-semibold text-center ${dataUrl ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 text-slate-400 pointer-events-none'}`}
           >
             Download PNG
           </a>
-          <button onClick={onClose} className="text-sm bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-lg hover:border-slate-300">
+          <button
+            onClick={copyImage}
+            disabled={!dataUrl}
+            className="flex-1 text-sm bg-white border border-slate-200 text-slate-700 px-3 py-2.5 rounded-lg font-semibold hover:border-slate-300 disabled:opacity-50"
+          >
+            {copied ? 'Copied!' : 'Copy Image'}
+          </button>
+          <button onClick={onClose} className="text-sm bg-white border border-slate-200 text-slate-700 px-3 py-2.5 rounded-lg hover:border-slate-300">
             Done
           </button>
         </div>
