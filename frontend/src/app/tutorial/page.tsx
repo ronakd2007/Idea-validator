@@ -34,22 +34,9 @@ function SectionHeading({ kicker, title, blurb }: { kicker: string; title: strin
 
 export default function TutorialPage() {
   return (
+    // The global Navbar from the root layout renders above this page (logo,
+    // Tutorial, Login/Get Started or the logged-in links) — no local header.
     <div className="min-h-screen bg-[#f8fafc]">
-      {/* Top bar */}
-      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-slate-200">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <Link href="/" className="font-bold text-slate-900">
-            💡 Idea<span className="text-blue-600">Validator</span>
-          </Link>
-          <nav className="flex items-center gap-3">
-            <Link href="/auth/login" className="text-sm text-slate-600 hover:text-slate-900 px-3 py-1.5">Log in</Link>
-            <Link href="/auth/register/founder" className="text-sm bg-blue-600 text-white px-4 py-1.5 rounded-lg font-semibold hover:bg-blue-700">
-              Get started
-            </Link>
-          </nav>
-        </div>
-      </header>
-
       {/* Hero */}
       <section className="max-w-5xl mx-auto px-4 sm:px-6 pt-16 pb-12 text-center">
         <h1 className="text-4xl sm:text-5xl font-bold text-slate-900 tracking-tight">How IdeaValidator works</h1>

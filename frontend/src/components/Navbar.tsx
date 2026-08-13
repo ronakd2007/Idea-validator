@@ -48,12 +48,14 @@ export default function Navbar() {
             {user.role === 'FOUNDER' && (
               <Link href="/founder/surveys" className="hidden sm:inline text-sm text-slate-600 hover:text-slate-900 whitespace-nowrap">My Surveys</Link>
             )}
+            <Link href="/tutorial" className="hidden sm:inline text-sm text-slate-600 hover:text-slate-900 whitespace-nowrap">Tutorial</Link>
             <span className="hidden md:inline text-sm text-slate-500 truncate max-w-[140px]">Hi, {user.name}</span>
             <span className="hidden sm:inline text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-700 whitespace-nowrap shrink-0">{user.role}</span>
             <button onClick={logout} className="text-sm text-red-600 hover:text-red-700 whitespace-nowrap shrink-0">Logout</button>
           </>
         ) : (
           <>
+            <Link href="/tutorial" className="text-sm text-slate-600 hover:text-slate-900 whitespace-nowrap">Tutorial</Link>
             <Link href="/auth/login" className="text-sm text-slate-600 hover:text-slate-900 whitespace-nowrap">Login</Link>
             <Link href="/auth/register/founder" className="text-sm px-3 sm:px-4 py-2 rounded-lg transition bg-blue-600 text-white hover:bg-blue-700 whitespace-nowrap shrink-0">Get Started</Link>
           </>
