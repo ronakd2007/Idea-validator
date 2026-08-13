@@ -5,15 +5,46 @@ function getToken() {
   return localStorage.getItem('token');
 }
 
+// View-as-User token (sessionStorage — tab-scoped by design). Read directly
+// here rather than importing auth.ts, mirroring how getToken() works. Never
+// attached to /admin paths: the admin portal always acts as the real admin.
+function getViewToken(path: string): string | null {
+  if (typeof window === 'undefined' || path.startsWith('/admin')) return null;
+  try {
+    const raw = sessionStorage.getItem('iv_view_as');
+    if (!raw) return null;
+    const ctx = JSON.parse(raw);
+    return ctx?.token || null;
+  } catch {
+    return null;
+  }
+}
+
+function exitViewMode(message: string) {
+  sessionStorage.removeItem('iv_view_as');
+  window.dispatchEvent(new Event('viewas-changed'));
+  alert(message);
+  window.location.href = '/admin';
+}
+
 async function request(path: string, options: RequestInit = {}) {
   const token = getToken();
   const headers: HeadersInit = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   if (token) (headers as any)['Authorization'] = `Bearer ${token}`;
+  const viewToken = getViewToken(path);
+  if (viewToken) (headers as any)['X-View-As'] = viewToken;
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
+    // View-session failures end view mode, never the admin's real login.
+    if ((data.code === 'VIEW_AS_EXPIRED' || data.code === 'VIEW_AS_INVALID') && typeof window !== 'undefined') {
+      exitViewMode(data.code === 'VIEW_AS_EXPIRED' ? 'View as User session expired.' : 'View session is no longer valid.');
+      const err = new Error(data.message || 'View session ended');
+      Object.assign(err, data);
+      throw err;
+    }
     // A 401 on an authenticated request means the stored token is expired or
     // revoked — without this, every page just renders "Request failed" until
     // the user figures out they need to log in again. Login attempts also
@@ -21,6 +52,7 @@ async function request(path: string, options: RequestInit = {}) {
     if (res.status === 401 && token && typeof window !== 'undefined') {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      sessionStorage.removeItem('iv_view_as');
       const next = encodeURIComponent(window.location.pathname);
       window.location.href = `/auth/login?next=${next}`;
     }
@@ -60,8 +92,17 @@ export const api = {
   getPaymentConfig: () => request('/payment/config'),
   mockPayment: (ideaId: string) => request(`/payment/mock/${ideaId}`, { method: 'POST' }),
 
+  // Idea sharing (public validation page)
+  enableIdeaShare: (id: string, settings?: any) =>
+    request(`/ideas/${id}/share`, { method: 'POST', body: JSON.stringify({ settings }) }),
+  updateIdeaShareSettings: (id: string, settings: any) =>
+    request(`/ideas/${id}/share`, { method: 'PATCH', body: JSON.stringify({ settings }) }),
+  disableIdeaShare: (id: string) => request(`/ideas/${id}/share`, { method: 'DELETE' }),
+  getPublicIdea: (publicId: string) => request(`/public/ideas/${publicId}`),
+  getIdeaVersions: (id: string) => request(`/ideas/${id}/versions`),
+
   // AI
-  getAiSummary: (ideaId: string) => request(`/ai/summary/${ideaId}`),
+  getAiSummary: (ideaId: string, refresh = false) => request(`/ai/summary/${ideaId}${refresh ? '?refresh=true' : ''}`),
   generateSurveyDraft: (rawText: string) => request('/ai/generate-survey', { method: 'POST', body: JSON.stringify({ rawText }) }),
 
   // Mass Survey
@@ -96,6 +137,8 @@ export const api = {
     const token = getToken();
     const headers: HeadersInit = {};
     if (token) (headers as any)['Authorization'] = `Bearer ${token}`;
+    const viewToken = getViewToken(`/surveys/${id}/export`);
+    if (viewToken) (headers as any)['X-View-As'] = viewToken;
     const res = await fetch(`${BASE}/surveys/${id}/export`, { headers });
     if (!res.ok) throw new Error('Export failed');
     return res.text();
@@ -124,6 +167,11 @@ export const api = {
   rejectValidator: (id: string) => request(`/admin/validators/${id}/reject`, { method: 'PATCH' }),
   getAdminIdeas: () => request('/admin/ideas'),
   deleteIdea: (id: string) => request(`/admin/ideas/${id}`, { method: 'DELETE' }),
+  toggleIdeaDashboardUnlock: (id: string) => request(`/admin/ideas/${id}/toggle-dashboard-unlock`, { method: 'PATCH' }),
+
+  // Admin — View as User
+  startViewAs: (userId: string) => request(`/admin/view-as/${userId}`, { method: 'POST' }),
+  endViewAs: (targetUserId?: string) => request('/admin/view-as/end', { method: 'POST', body: JSON.stringify({ targetUserId }) }),
   toggleUserStatus: (id: string) => request(`/admin/users/${id}/toggle-status`, { method: 'PATCH' }),
   getAdminSurveys: () => request('/admin/surveys'),
   adminToggleSurveyStatus: (id: string) => request(`/admin/surveys/${id}/toggle-status`, { method: 'PATCH' }),

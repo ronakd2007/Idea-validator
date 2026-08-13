@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { getStoredUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 
 export default function AdminDashboardPage() {
   const router = useRouter();
@@ -11,7 +11,7 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const user = getStoredUser();
+    const user = getRealUser();
     if (!user || user.role !== 'ADMIN') { router.push('/auth/login'); return; }
     api.getAnalytics().then(setStats).catch(() => {}).finally(() => setLoading(false));
   }, []);

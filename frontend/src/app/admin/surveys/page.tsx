@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { getStoredUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 
 const STATUS_STYLE: Record<string, string> = {
   DRAFT: 'bg-slate-100 text-slate-700',
@@ -18,7 +18,7 @@ export default function AdminSurveysPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
-    const user = getStoredUser();
+    const user = getRealUser();
     if (!user || user.role !== 'ADMIN') { router.push('/auth/login'); return; }
     api.getAdminSurveys().then(setSurveys).catch(() => {}).finally(() => setLoading(false));
   }, []);

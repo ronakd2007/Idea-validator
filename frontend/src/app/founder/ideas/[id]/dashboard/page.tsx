@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser, isViewMode } from '@/lib/auth';
 import RadarChart from '@/components/RadarChart';
 import * as XLSX from 'xlsx';
 import {
@@ -12,6 +12,12 @@ import {
 } from '@/lib/reportStatus';
 import { downloadValidationReport } from '@/lib/generateValidationReport';
 import { parseAiSummary, toSentences, splitBoldRuns } from '@/lib/parseAiSummary';
+import ValidationProgress, { ProgressStep } from '@/components/founder/ValidationProgress';
+import ValidationGapCard from '@/components/founder/ValidationGapCard';
+import { detectValidationGap } from '@/lib/validationGap';
+import ScoreBreakdown from '@/components/founder/ScoreBreakdown';
+import ShareIdeaModal from '@/components/founder/ShareIdeaModal';
+import VersionTimeline, { IdeaVersion } from '@/components/founder/VersionTimeline';
 
 const NAV_LINKS = [
   { id: 'glance', label: 'At a Glance' },
@@ -45,16 +51,36 @@ export default function IdeaDashboardPage() {
   const [aiError, setAiError] = useState('');
   const [surveys, setSurveys] = useState<any[]>([]);
   const [surveyAnalytics, setSurveyAnalytics] = useState<any>(null);
+  // The gap card renders only after the survey fetch settles, so it never
+  // flashes "no customer evidence" while analytics are still loading.
+  const [surveysLoaded, setSurveysLoaded] = useState(false);
   const [downloadingReport, setDownloadingReport] = useState(false);
   const [reportError, setReportError] = useState('');
+  const [versions, setVersions] = useState<IdeaVersion[]>([]);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [share, setShare] = useState<{ publicId: string | null; publicShareEnabled: boolean; publicShareSettings: any } | null>(null);
+  const [viewMode, setViewMode] = useState(false);
 
   useEffect(() => {
     const user = getStoredUser();
     if (!user || user.role !== 'FOUNDER') { router.push('/auth/login'); return; }
+    setViewMode(isViewMode());
     api.getIdeaDashboard(params.id as string)
-      .then(setData)
+      .then((d) => {
+        setData(d);
+        // Stored AI summary renders instantly; the button becomes "Regenerate".
+        if (d?.idea?.aiSummary) setAiSummary(d.idea.aiSummary);
+        if (d?.idea) {
+          setShare({
+            publicId: d.idea.publicId ?? null,
+            publicShareEnabled: !!d.idea.publicShareEnabled,
+            publicShareSettings: d.idea.publicShareSettings ?? '{}',
+          });
+        }
+      })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
+    api.getIdeaVersions(params.id as string).then(setVersions).catch(() => {});
     api.getMySurveys()
       .then(async (all: any[]) => {
         const mine = all.filter((s) => s.ideaId === params.id);
@@ -64,18 +90,21 @@ export default function IdeaDashboardPage() {
           try { setSurveyAnalytics(await api.getSurveyAnalytics(primary.id)); } catch { /* evidence section just omits market data */ }
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setSurveysLoaded(true));
   }, []);
 
   if (loading) return <div className="flex items-center justify-center min-h-screen"><div className="text-slate-500">Loading dashboard...</div></div>;
   if (error) return <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error}</div></div>;
 
-  // Locked state: the server withholds all validation data until 3 validations
-  // arrive or 48h pass — this renders the progress it returns instead.
+  // Locked state: the server withholds all validation data for 48h after
+  // payment — this renders the countdown plus how many experts reviewed so far.
   if (data && data.available === false) {
-    const hoursLeft = Math.max(0, Math.ceil((new Date(data.unlockAt).getTime() - Date.now()) / (60 * 60 * 1000)));
+    const totalMs = 48 * 60 * 60 * 1000;
+    const remainingMs = Math.max(0, new Date(data.unlockAt).getTime() - Date.now());
+    const hoursLeft = Math.ceil(remainingMs / (60 * 60 * 1000));
+    const pctElapsed = Math.min(100, Math.round(((totalMs - remainingMs) / totalMs) * 100));
     const received = data.validationCount ?? 0;
-    const needed = data.validationsNeeded ?? 3;
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-10 w-full max-w-lg text-center">
@@ -83,15 +112,20 @@ export default function IdeaDashboardPage() {
           <h2 className="text-2xl font-bold text-slate-900 mb-2">Validation in progress</h2>
           <p className="text-slate-500 mb-6">
             Experts are reviewing <span className="font-medium text-slate-700">{data.idea?.title}</span>.
-            Your dashboard unlocks after {needed} validations or in about {hoursLeft}h — whichever comes first.
+            Your dashboard unlocks in about <span className="font-semibold text-slate-700">{hoursLeft}h</span>.
           </p>
           <div className="mb-2 flex justify-between text-sm text-slate-500">
-            <span>{received} of {needed} expert validations received</span>
-            <span>{Math.round((received / needed) * 100)}%</span>
+            <span>48-hour validation window</span>
+            <span>{pctElapsed}%</span>
           </div>
-          <div className="w-full bg-slate-100 rounded-full h-3 mb-8">
-            <div className="bg-blue-600 h-3 rounded-full transition-all" style={{ width: `${Math.min(100, (received / needed) * 100)}%` }} />
+          <div className="w-full bg-slate-100 rounded-full h-3 mb-4">
+            <div className="bg-blue-600 h-3 rounded-full transition-all" style={{ width: `${pctElapsed}%` }} />
           </div>
+          <p className="text-sm text-slate-500 mb-8">
+            {received > 0
+              ? `${received} expert validation${received !== 1 ? 's' : ''} received so far.`
+              : 'Experts have been notified — validations will appear here.'}
+          </p>
           <Link href="/founder/ideas" className="inline-block bg-blue-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-blue-700">
             Back to My Ideas
           </Link>
@@ -136,13 +170,38 @@ export default function IdeaDashboardPage() {
     .map(c => ({ ...c, score: (a as any)[c.key] || 0, pct: (((a as any)[c.key] || 0) / 50) * 100 }))
     .filter(c => c.score > 0);
   const { strongest, weakest } = resolveStrongestWeakest(matrixWithPct);
+
+  // Where this idea sits in the validation journey — every state is derived
+  // from data already loaded on this page, no extra requests.
+  const totalSurveyResponses = surveys.reduce((sum, sv) => sum + (sv._count?.responses ?? 0), 0);
+  const expertDone = (a.totalValidations || 0) > 0;
+  const hasRisk = !!a.riskSummary && Object.keys(a.riskSummary).length > 0;
+  const progressSteps: ProgressStep[] = [
+    { label: 'Idea Submitted', state: 'done', detail: idea?.submittedAt ? new Date(idea.submittedAt).toLocaleDateString() : undefined },
+    { label: 'Expert Validation', state: expertDone ? 'done' : 'active', detail: `${a.totalValidations || 0} expert review${a.totalValidations !== 1 ? 's' : ''}` },
+    {
+      label: 'Customer Validation',
+      state: totalSurveyResponses > 0 ? 'done' : 'active',
+      detail: totalSurveyResponses > 0 ? `${totalSurveyResponses} survey response${totalSurveyResponses !== 1 ? 's' : ''}` : 'Run a survey to test demand',
+    },
+    { label: 'Risk Assessment', state: hasRisk ? 'done' : 'pending', detail: hasRisk ? 'Assessed by experts' : 'Included in expert review' },
+    { label: 'AI Analysis', state: aiSummary ? 'done' : (a.totalValidations || 0) > 0 ? 'active' : 'pending', detail: aiSummary ? 'Summary generated' : 'Generate in AI Summary below' },
+    {
+      label: 'Validation Complete',
+      state: expertDone && !!aiSummary && totalSurveyResponses > 0 ? 'done' : 'pending',
+      detail: expertDone && !!aiSummary && totalSurveyResponses > 0 ? 'Ready to share' : undefined,
+    },
+  ];
+
+  // Insight layer on top of the score — never touches the score itself.
+  const gapFinding = surveysLoaded ? detectValidationGap(a, surveyAnalytics, surveys.length) : null;
   const allCategoriesTied = matrixWithPct.length >= 2 && !strongest && !weakest;
 
-  const generateAiSummary = async () => {
+  const generateAiSummary = async (refresh = false) => {
     setAiLoading(true);
     setAiError('');
     try {
-      const res = await api.getAiSummary(params.id as string);
+      const res = await api.getAiSummary(params.id as string, refresh);
       setAiSummary(res.summary);
     } catch (err: any) {
       setAiError(err.message);
@@ -393,6 +452,10 @@ export default function IdeaDashboardPage() {
         <p className="text-sm text-slate-500 mt-1">{a.totalValidations || 0} validation{a.totalValidations !== 1 ? 's' : ''} received</p>
       </div>
 
+      <ValidationProgress steps={progressSteps} />
+
+      <VersionTimeline versions={versions} />
+
       {/* Mass Survey — a separate evidence source from Expert Validation, shown side by side and never combined into one score */}
       {surveys.length > 0 && (
         <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-8">
@@ -466,9 +529,12 @@ export default function IdeaDashboardPage() {
       )}
 
       {a.totalValidations === 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-8 text-center">
-          <p className="text-amber-700 font-medium">No validations received yet. Check back later!</p>
-        </div>
+        <>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-8 text-center">
+            <p className="text-amber-700 font-medium">No validations received yet. Check back later!</p>
+          </div>
+          {gapFinding && <ValidationGapCard finding={gapFinding} />}
+        </>
       )}
 
       {a.totalValidations > 0 && (
@@ -494,7 +560,32 @@ export default function IdeaDashboardPage() {
             </div>
           </div>
 
-          <div className="flex justify-end mb-6">
+          {/* The score says how validated the idea is; this says what still
+              needs proving — first thing under the score by design. */}
+          {gapFinding && <ValidationGapCard finding={gapFinding} />}
+
+          <ScoreBreakdown aggregated={a} />
+
+          <div className="flex flex-wrap justify-end gap-2 mb-6">
+            {viewMode ? (
+              <span title="This action is disabled while viewing as another user."
+                className="flex items-center gap-2 bg-slate-100 text-slate-400 px-4 py-2.5 rounded-lg text-sm font-semibold cursor-not-allowed">
+                ↻ Improve &amp; Re-validate
+              </span>
+            ) : (
+              <Link href={`/founder/submit-idea?revise=${idea?.id}`}
+                className="flex items-center gap-2 bg-white border border-blue-200 text-blue-700 px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-50 transition">
+                ↻ Improve &amp; Re-validate
+              </Link>
+            )}
+            <button onClick={() => viewMode ? alert('This action is disabled while viewing as another user.') : setShareOpen(true)}
+              disabled={false}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition ${viewMode ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342a3 3 0 100-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684zm0-9.316a3 3 0 105.368-2.684 3 3 0 00-5.368 2.684z" />
+              </svg>
+              Share Validation
+            </button>
             <button onClick={handleDownloadReport} disabled={downloadingReport}
               className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-slate-800 transition disabled:opacity-60">
               {downloadingReport ? (
@@ -643,15 +734,18 @@ export default function IdeaDashboardPage() {
                 <p className="text-xs text-slate-500 mt-0.5">Powered by Groq AI — synthesises all validator scores and feedback</p>
               </div>
               {!aiSummary && (
-                <button onClick={generateAiSummary} disabled={aiLoading}
+                <button onClick={() => generateAiSummary(false)} disabled={aiLoading || viewMode}
+                  title={viewMode ? 'This action is disabled while viewing as another user.' : undefined}
                   className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition disabled:opacity-60">
                   {aiLoading ? (
                     <><span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span> Generating...</>
                   ) : 'Generate AI Summary'}
                 </button>
               )}
-              {aiSummary && (
-                <button onClick={() => { setAiSummary(''); setAiError(''); }} className="text-xs text-blue-600 hover:underline">Regenerate</button>
+              {aiSummary && !viewMode && (
+                <button onClick={() => generateAiSummary(true)} disabled={aiLoading} className="text-xs text-blue-600 hover:underline disabled:opacity-50">
+                  {aiLoading ? 'Regenerating…' : 'Regenerate'}
+                </button>
               )}
             </div>
 
@@ -673,7 +767,7 @@ export default function IdeaDashboardPage() {
                     return (
                       <div key={heading} className={`bg-white rounded-lg p-5 border border-slate-200 ${heading === 'VERDICT' ? 'md:col-span-2' : ''}`}>
                         <div className={`inline-flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded-full mb-3 ${meta.bg} ${meta.color}`}>
-                          <span>{meta.icon}</span>{heading}
+                          <span>{meta.icon}</span>{heading === 'NEXT STEPS' ? 'WHAT SHOULD YOU DO NEXT?' : heading}
                         </div>
                         {heading === 'VERDICT' && (
                           <p className="text-base text-slate-800 leading-relaxed font-medium">{renderInlineMarkdown(body)}</p>
@@ -782,6 +876,16 @@ export default function IdeaDashboardPage() {
             </div>
           )}
         </>
+      )}
+
+      {shareOpen && share && idea && (
+        <ShareIdeaModal
+          ideaId={idea.id}
+          ideaTitle={idea.title}
+          initialShare={share}
+          onClose={() => setShareOpen(false)}
+          onChanged={setShare}
+        />
       )}
     </div>
   );

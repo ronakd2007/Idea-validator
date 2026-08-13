@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { getStoredUser } from '@/lib/auth';
+import { getRealUser, setViewContext } from '@/lib/auth';
 
 export default function AdminUsersPage() {
   const router = useRouter();
@@ -13,10 +13,27 @@ export default function AdminUsersPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
-    const user = getStoredUser();
+    const user = getRealUser();
     if (!user || user.role !== 'ADMIN') { router.push('/auth/login'); return; }
     api.getUsers().then(setUsers).catch(() => {}).finally(() => setLoading(false));
   }, []);
+
+  const viewAsUser = async (u: any) => {
+    const ok = window.confirm(
+      `View this account as ${u.name}?\n\nYou will temporarily view the platform from this user's perspective. Your admin session will remain active.`
+    );
+    if (!ok) return;
+    setActionLoading(u.id + '_view');
+    try {
+      const res = await api.startViewAs(u.id);
+      setViewContext({ token: res.viewToken, expiresAt: res.expiresAt, target: res.target });
+      router.push(res.target.role === 'VALIDATOR' ? '/validator/dashboard' : '/founder');
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const toggleStatus = async (id: string) => {
     setActionLoading(id);
@@ -92,8 +109,15 @@ export default function AdminUsersPage() {
                   <div className="flex items-center gap-2">
                     <Link href={`/admin/users/${u.id}`}
                       className="text-xs px-3 py-1 rounded border border-slate-300 text-slate-600 font-medium hover:border-blue-400 hover:text-blue-600 transition">
-                      View
+                      Details
                     </Link>
+                    {u.role !== 'ADMIN' && (
+                      <button onClick={() => viewAsUser(u)} disabled={actionLoading === u.id + '_view'}
+                        title="Temporarily view the platform from this user's perspective"
+                        className="text-xs px-3 py-1 rounded border border-amber-300 text-amber-700 font-medium hover:bg-amber-50 transition disabled:opacity-50">
+                        {actionLoading === u.id + '_view' ? '...' : 'View as User'}
+                      </button>
+                    )}
                     <button onClick={() => toggleStatus(u.id)} disabled={actionLoading === u.id}
                       className={`text-xs px-3 py-1 rounded border font-medium transition disabled:opacity-50 ${u.isActive ? 'border-red-300 text-red-600 hover:bg-red-50' : 'border-emerald-300 text-emerald-600 hover:bg-emerald-50'}`}>
                       {actionLoading === u.id ? '...' : u.isActive ? 'Deactivate' : 'Activate'}

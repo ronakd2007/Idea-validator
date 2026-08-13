@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getStoredUser } from './auth';
+import { getRealUser } from './auth';
 
 /**
  * Client-side admin gate, matching what the existing admin pages already do
@@ -17,7 +17,7 @@ export function useAdminGuard() {
   const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
-    const user = getStoredUser();
+    const user = getRealUser();
     if (!user || user.role !== 'ADMIN') {
       router.push('/auth/login');
       return;

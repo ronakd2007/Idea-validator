@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { getStoredUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 
 export default function AdminIdeasPage() {
   const router = useRouter();
@@ -12,7 +12,7 @@ export default function AdminIdeasPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
-    const user = getStoredUser();
+    const user = getRealUser();
     if (!user || user.role !== 'ADMIN') { router.push('/auth/login'); return; }
     api.getAdminIdeas().then(setIdeas).catch(() => {}).finally(() => setLoading(false));
   }, []);

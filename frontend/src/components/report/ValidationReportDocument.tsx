@@ -5,7 +5,25 @@ import {
   MATRIX_CATEGORIES, RISK_LABELS, RISK_LABEL, breakdownStatus, dominantRisk, riskTone,
   resolveStrongestWeakest, sanitizeIdeaTitle, validationStage, type Tone, type MatrixCategory,
 } from '@/lib/reportStatus';
-import { parseAiSummary, firstSentences } from '@/lib/parseAiSummary';
+import { parseAiSummary, firstSentences, toSentences } from '@/lib/parseAiSummary';
+
+// The report's bottom line, derived from the same numbers shown above it —
+// thresholds mirror the public validation page so every surface agrees.
+function finalRecommendation(overall: number, riskSummary: any): { label: string; tone: Tone; rationale: string } {
+  const entries = riskSummary ? Object.entries(riskSummary).map(([, counts]: [string, any]) => dominantRisk(counts)) : [];
+  const highRisks = entries.filter((l) => l === 'HIGH').length;
+  if (overall >= 70 && highRisks === 0) {
+    return { label: 'CONTINUE', tone: 'positive', rationale: `Overall score of ${overall.toFixed(0)}/100 with no high-risk categories supports moving forward.` };
+  }
+  if (overall >= 40) {
+    return {
+      label: 'IMPROVE & REVALIDATE',
+      tone: 'warning',
+      rationale: `A score of ${overall.toFixed(0)}/100${highRisks ? ` and ${highRisks} high-risk categor${highRisks === 1 ? 'y' : 'ies'}` : ''} indicates real potential with specific weaknesses to address before committing further.`,
+    };
+  }
+  return { label: 'HIGH RISK — RECONSIDER', tone: 'critical', rationale: `A score of ${overall.toFixed(0)}/100 signals fundamental concerns across multiple categories.` };
+}
 
 interface ReportData {
   idea: any;
@@ -355,7 +373,7 @@ function EvidencePage({ idea, aggregated, marketResponseLabel, surveyResponseCou
       )}
 
       {aiRows.length > 0 && (
-        <View>
+        <View style={{ marginBottom: 14 }}>
           <Text style={styles.h3}>AI Analysis</Text>
           <View style={{ gap: 5 }}>
             {aiRows.map((r) => (
@@ -368,7 +386,36 @@ function EvidencePage({ idea, aggregated, marketResponseLabel, surveyResponseCou
         </View>
       )}
 
-      <Text style={[styles.small, { marginTop: 14 }]}>Based on validation evidence available at the time of this report. This report is not an investment recommendation.</Text>
+      {/* Recommendation — the report's bottom line */}
+      {(() => {
+        const rec = finalRecommendation(a.overallScore || 0, a.riskSummary);
+        const recColors = toneColors(rec.tone);
+        const nextSteps = aiSummary
+          ? toSentences(parseAiSummary(aiSummary).find((s) => s.heading === 'NEXT STEPS')?.body || '').slice(0, 3)
+          : [];
+        return (
+          <View style={{ borderWidth: 1, borderColor: recColors.border, backgroundColor: recColors.bg, borderRadius: 8, padding: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <Text style={{ fontSize: 8, fontFamily: 'Helvetica-Bold', color: colors.inkFaint, textTransform: 'uppercase', letterSpacing: 0.5 }}>Recommendation</Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: recColors.text }}>{rec.label}</Text>
+            </View>
+            <Text style={[styles.body, { fontSize: 9, marginBottom: nextSteps.length ? 6 : 0 }]}>{rec.rationale}</Text>
+            {nextSteps.length > 0 && (
+              <View style={{ gap: 3 }}>
+                <Text style={{ fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: colors.inkFaint, textTransform: 'uppercase' }}>Top Next Steps</Text>
+                {nextSteps.map((step, i) => (
+                  <View key={i} style={{ flexDirection: 'row', gap: 5 }}>
+                    <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold', color: recColors.text }}>{i + 1}.</Text>
+                    <Text style={[styles.body, { flex: 1, fontSize: 9 }]}>{step.replace(/^\d+[.)]\s*/, '')}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        );
+      })()}
+
+      <Text style={[styles.small, { marginTop: 14 }]}>Based on validation evidence available at the time of this report. Validation is evidence, not a guarantee of success — this report is not an investment recommendation.</Text>
 
       <Footer ideaTitle={title} />
     </Page>

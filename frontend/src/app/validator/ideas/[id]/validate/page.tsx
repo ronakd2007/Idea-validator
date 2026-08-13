@@ -77,9 +77,12 @@ export default function ValidateIdeaPage() {
   const [startupSucc, setStartupSucc] = useState({ founderTeam: 5, marketSize: 5, productDifferentiation: 5, traction: 5, businessModel: 5, competition: 5, timing: 5, fundingReadiness: 5 });
   const [openFeedback, setOpenFeedback] = useState({ biggestStrength: '', biggestWeakness: '', suggestedImprovement: '' });
 
+  const [viewMode, setViewMode] = useState(false);
+
   useEffect(() => {
     const user = getStoredUser();
     if (!user || user.role !== 'VALIDATOR') { router.push('/auth/login'); return; }
+    setViewMode(!!(user as any).viewAs);
     Promise.all([api.getIdea(ideaId), api.checkAlreadyValidated(ideaId)])
       .then(([idea, check]) => {
         if (check.alreadyValidated) { router.push('/validator/dashboard'); return; }
@@ -129,6 +132,10 @@ export default function ValidateIdeaPage() {
   };
 
   const submit = async () => {
+    if (viewMode) {
+      setError('This action is disabled while viewing as another user.');
+      return;
+    }
     if (!openFeedback.biggestStrength || !openFeedback.biggestWeakness || !openFeedback.suggestedImprovement) {
       setError('Please complete the open feedback section'); return;
     }

@@ -2,7 +2,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser, isViewMode } from '@/lib/auth';
 import ScoreSelector from '@/components/ScoreSelector';
 
 const STAGES = ['IDEA', 'RESEARCH', 'PROTOTYPE', 'MVP', 'REVENUE_GENERATING'];
@@ -21,6 +21,9 @@ function SubmitIdeaInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const payIdeaId = searchParams.get('pay');
+  // Revision flow: prefill from an existing idea and submit through the
+  // existing /ideas/:id/revise endpoint (discounted resubmission).
+  const reviseIdeaId = searchParams.get('revise');
 
   const [step, setStep] = useState<'idea' | 'assessment' | 'payment'>(payIdeaId ? 'payment' : 'idea');
   const [createdIdeaId, setCreatedIdeaId] = useState<string | null>(payIdeaId);
@@ -57,10 +60,48 @@ function SubmitIdeaInner() {
     return true;
   };
 
+  const [viewMode, setViewMode] = useState(false);
+
   useEffect(() => {
     const user = getStoredUser();
     if (!user || user.role !== 'FOUNDER') router.push('/auth/login');
+    setViewMode(isViewMode());
   }, []);
+
+  // Prefill the whole form from the idea being revised — the founder edits
+  // what changed instead of retyping everything.
+  useEffect(() => {
+    if (!reviseIdeaId) return;
+    api.getIdea(reviseIdeaId)
+      .then((original: any) => {
+        setIdea({
+          title: original.title || '',
+          videoUrl: original.videoUrl || '',
+          industryCategory: original.industryCategory || INDUSTRIES[0],
+          problemStatement: original.problemStatement || '',
+          solutionDescription: original.solutionDescription || '',
+          targetCustomer: original.targetCustomer || '',
+          revenueModel: original.revenueModel || '',
+          stage: original.stage || STAGES[0],
+          founderContext: original.founderContext || '',
+        });
+        try {
+          const team = JSON.parse(original.teamMembers || '[]');
+          if (Array.isArray(team) && team.length) setTeamMembers(team);
+        } catch { /* keep the empty row */ }
+        if (original.selfAssessment) {
+          const sa = original.selfAssessment;
+          setAssessment({
+            industryKnowledge: sa.industryKnowledge ?? 5,
+            relevantExperience: sa.relevantExperience ?? 5,
+            networkAccess: sa.networkAccess ?? 5,
+            passion: sa.passion ?? 5,
+            skillAlignment: sa.skillAlignment ?? 5,
+          });
+        }
+      })
+      .catch(() => setError('Could not load the idea to revise.'));
+  }, [reviseIdeaId]);
 
   const submitIdea = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,7 +109,10 @@ function SubmitIdeaInner() {
     setLoading(true);
     try {
       const cleanTeam = teamMembers.filter(m => m.name.trim() && m.linkedinUrl.trim());
-      const res = await api.createIdea({ ...idea, teamMembers: cleanTeam, selfAssessment: assessment });
+      const payload = { ...idea, teamMembers: cleanTeam, selfAssessment: assessment };
+      const res = reviseIdeaId
+        ? await api.reviseIdea(reviseIdeaId, payload)
+        : await api.createIdea(payload);
       setCreatedIdeaId(res.id);
       setStep('payment');
     } catch (err: any) {
@@ -99,13 +143,28 @@ function SubmitIdeaInner() {
     />
   );
 
+  // Read-only in View-as-User mode: submitting an idea or paying on the
+  // viewed founder's behalf must be impossible, not just discouraged. The
+  // backend refuses these writes too — this is the friendly layer.
+  if (viewMode) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-10 w-full max-w-md text-center">
+          <div className="text-4xl mb-4">👁</div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Read-only view</h2>
+          <p className="text-slate-600 text-sm">This action is disabled while viewing as another user.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (paySuccess) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-10 w-full max-w-md text-center">
           <div className="text-5xl mb-4">🎉</div>
           <h2 className="text-2xl font-bold text-slate-900 mb-3">Idea Submitted!</h2>
-          <p className="text-slate-500 mb-6">Your idea is now live for validators to review. Your dashboard unlocks after 3 expert validations or 48 hours — whichever comes first.</p>
+          <p className="text-slate-500 mb-6">Your idea is now live for validators to review. Your dashboard will be available 48 hours after submission.</p>
           <button onClick={() => router.push('/founder/ideas')}
             className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-blue-700">
             View My Ideas
@@ -118,8 +177,12 @@ function SubmitIdeaInner() {
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-900">Submit Your Business Idea</h1>
-        <p className="text-slate-500 mt-1">Complete all sections to get expert validation</p>
+        <h1 className="text-3xl font-bold text-slate-900">{reviseIdeaId ? 'Improve & Re-validate' : 'Submit Your Business Idea'}</h1>
+        <p className="text-slate-500 mt-1">
+          {reviseIdeaId
+            ? 'Update what changed since the last validation — revised versions are submitted at a discount.'
+            : 'Complete all sections to get expert validation'}
+        </p>
       </div>
 
       {/* Steps indicator */}

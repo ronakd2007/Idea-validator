@@ -23,6 +23,7 @@ export default function AdminIdeaDetailPage() {
   const [tab, setTab] = useState('Idea');
   const [downloading, setDownloading] = useState(false);
   const [reportError, setReportError] = useState('');
+  const [unlocking, setUnlocking] = useState(false);
 
   useEffect(() => {
     if (!allowed || !ideaId) return;
@@ -52,6 +53,20 @@ export default function AdminIdeaDetailPage() {
       setReportError(err.message || 'Could not generate the report.');
     } finally {
       setDownloading(false);
+    }
+  };
+
+  // Admin override for the 48h founder-dashboard gate on this one idea.
+  const toggleDashboardUnlock = async () => {
+    setUnlocking(true);
+    setReportError('');
+    try {
+      const res = await api.toggleIdeaDashboardUnlock(ideaId);
+      setData((prev: any) => ({ ...prev, idea: { ...prev.idea, dashboardUnlockedAt: res.dashboardUnlockedAt } }));
+    } catch (err: any) {
+      setReportError(err.message || 'Could not change the dashboard lock.');
+    } finally {
+      setUnlocking(false);
     }
   };
 
@@ -93,12 +108,23 @@ export default function AdminIdeaDetailPage() {
             </p>
           </div>
         </div>
-        {a.totalValidations > 0 && (
-          <button onClick={handleDownloadReport} disabled={downloading}
-            className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-800 disabled:opacity-50">
-            {downloading ? 'Generating...' : 'Download validation report'}
+        <div className="flex flex-wrap gap-2">
+          <button onClick={toggleDashboardUnlock} disabled={unlocking}
+            title="Overrides the 48-hour wait so this founder can see their results now"
+            className={`px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 border ${
+              idea.dashboardUnlockedAt
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+            }`}>
+            {unlocking ? 'Saving...' : idea.dashboardUnlockedAt ? '🔓 Dashboard unlocked — restore timer' : '🔓 Unlock dashboard now'}
           </button>
-        )}
+          {a.totalValidations > 0 && (
+            <button onClick={handleDownloadReport} disabled={downloading}
+              className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-800 disabled:opacity-50">
+              {downloading ? 'Generating...' : 'Download validation report'}
+            </button>
+          )}
+        </div>
       </div>
 
       {reportError && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm mb-6">{reportError}</div>}

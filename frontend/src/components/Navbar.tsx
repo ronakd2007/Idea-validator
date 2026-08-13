@@ -10,7 +10,11 @@ export default function Navbar() {
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    setUser(getStoredUser());
+    const read = () => setUser(getStoredUser());
+    read();
+    // Re-read identity the instant view mode starts or ends in this tab.
+    window.addEventListener('viewas-changed', read);
+    return () => window.removeEventListener('viewas-changed', read);
   }, [pathname]);
 
   // the validator experience has its own sidebar + header shell
@@ -34,11 +38,13 @@ export default function Navbar() {
 
   const isHome = pathname === '/';
 
+  const inViewMode = !!user?.viewAs;
+
   return (
     <nav className={`px-4 sm:px-6 py-4 flex items-center justify-between gap-3 transition-all duration-300 ${
       isHome
-        ? 'absolute top-0 left-0 right-0 z-50 bg-white/70 backdrop-blur-sm border-b border-slate-200/70'
-        : 'bg-white/90 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-50'
+        ? 'absolute top-0 left-0 right-0 z-50 bg-white/70 backdrop-blur-sm border-b border-slate-200/70 viewas-sticky-offset'
+        : 'bg-white/90 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-50 viewas-sticky-offset'
     }`}>
       <Link href="/" className="text-lg sm:text-xl font-bold text-slate-900 shrink-0">IdeaValidator</Link>
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
@@ -49,9 +55,20 @@ export default function Navbar() {
               <Link href="/founder/surveys" className="hidden sm:inline text-sm text-slate-600 hover:text-slate-900 whitespace-nowrap">My Surveys</Link>
             )}
             <Link href="/tutorial" className="hidden sm:inline text-sm text-slate-600 hover:text-slate-900 whitespace-nowrap">Tutorial</Link>
-            <span className="hidden md:inline text-sm text-slate-500 truncate max-w-[140px]">Hi, {user.name}</span>
-            <span className="hidden sm:inline text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-700 whitespace-nowrap shrink-0">{user.role}</span>
-            <button onClick={logout} className="text-sm text-red-600 hover:text-red-700 whitespace-nowrap shrink-0">Logout</button>
+            {inViewMode ? (
+              // Never impersonate: this is the viewed user's page, not their
+              // session. The amber treatment matches the banner; logout is
+              // hidden because the banner's Exit View Mode is the only exit.
+              <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 whitespace-nowrap shrink-0 font-semibold">
+                👁 Viewing: {user.name} · {user.role}
+              </span>
+            ) : (
+              <>
+                <span className="hidden md:inline text-sm text-slate-500 truncate max-w-[140px]">Hi, {user.name}</span>
+                <span className="hidden sm:inline text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-700 whitespace-nowrap shrink-0">{user.role}</span>
+                <button onClick={logout} className="text-sm text-red-600 hover:text-red-700 whitespace-nowrap shrink-0">Logout</button>
+              </>
+            )}
           </>
         ) : (
           <>

@@ -1,9 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAdminGuard } from '@/lib/adminGuard';
+import { setViewContext } from '@/lib/auth';
 import {
   ROLE_STYLE, CATEGORY_STYLE, SURVEY_STATUS_STYLE, formatDate, formatDateTime, timeAgo, targetHref,
 } from '@/lib/adminActivity';
@@ -13,6 +14,7 @@ const TABS = ['Profile', 'Ideas', 'Surveys', 'Validations', 'Activity'];
 export default function AdminUserDetailPage() {
   const allowed = useAdminGuard();
   const params = useParams();
+  const router = useRouter();
   const userId = String(params?.id || '');
 
   const [data, setData] = useState<any>(null);
@@ -20,6 +22,7 @@ export default function AdminUserDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [tab, setTab] = useState('Profile');
+  const [startingView, setStartingView] = useState(false);
 
   useEffect(() => {
     if (!allowed || !userId) return;
@@ -53,20 +56,45 @@ export default function AdminUserDetailPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
-      <div className="flex items-center gap-4 mb-6">
-        <Link href="/admin/users" className="text-slate-500 hover:text-slate-700">← Back</Link>
-        <div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-3xl font-bold text-slate-900">{user.name}</h1>
-            <span className={`text-xs px-2 py-1 rounded-full font-medium ${ROLE_STYLE[user.role] || 'bg-slate-100 text-slate-700'}`}>
-              {user.role}
-            </span>
-            <span className={`text-xs px-2 py-1 rounded-full font-medium ${user.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
-              {user.isActive ? 'Active' : 'Inactive'}
-            </span>
+      <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
+        <div className="flex items-center gap-4">
+          <Link href="/admin/users" className="text-slate-500 hover:text-slate-700">← Back</Link>
+          <div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-3xl font-bold text-slate-900">{user.name}</h1>
+              <span className={`text-xs px-2 py-1 rounded-full font-medium ${ROLE_STYLE[user.role] || 'bg-slate-100 text-slate-700'}`}>
+                {user.role}
+              </span>
+              <span className={`text-xs px-2 py-1 rounded-full font-medium ${user.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                {user.isActive ? 'Active' : 'Inactive'}
+              </span>
+            </div>
+            <p className="text-slate-500 mt-1">Account created {formatDate(user.createdAt)}</p>
           </div>
-          <p className="text-slate-500 mt-1">Account created {formatDate(user.createdAt)}</p>
         </div>
+        {user.role !== 'ADMIN' && (
+          <button
+            onClick={async () => {
+              const ok = window.confirm(
+                `View this account as ${user.name}?\n\nYou will temporarily view the platform from this user's perspective. Your admin session will remain active.`
+              );
+              if (!ok) return;
+              setStartingView(true);
+              try {
+                const res = await api.startViewAs(user.id);
+                setViewContext({ token: res.viewToken, expiresAt: res.expiresAt, target: res.target });
+                router.push(res.target.role === 'VALIDATOR' ? '/validator/dashboard' : '/founder');
+              } catch (err: any) {
+                alert(err.message);
+                setStartingView(false);
+              }
+            }}
+            disabled={startingView}
+            className="bg-amber-500 text-amber-950 px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-400 disabled:opacity-50 shadow-sm"
+          >
+            {startingView ? 'Starting…' : '👁 View as User'}
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">

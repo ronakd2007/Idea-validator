@@ -24,7 +24,7 @@ export default function ValidatorSidebar({ open, onClose }: { open: boolean; onC
     <>
       {open && <div className="fixed inset-0 bg-black/30 z-40 md:hidden" onClick={onClose} />}
       <aside
-        className={`w-60 shrink-0 bg-white border-r border-slate-200 flex flex-col h-screen fixed md:sticky top-0 z-50 transition-transform duration-200 ${
+        className={`w-60 shrink-0 bg-white border-r border-slate-200 flex flex-col h-screen fixed md:sticky top-0 z-50 transition-transform duration-200 viewas-sidebar-offset ${
           open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         }`}
       >
@@ -46,18 +46,31 @@ export default function ValidatorSidebar({ open, onClose }: { open: boolean; onC
         </nav>
 
         <div className="px-3 py-4 border-t border-slate-200">
-          {user && (
-            <div className="px-3 mb-2">
-              <p className="text-sm font-medium text-slate-800 truncate">{user.name}</p>
+          {user && user.viewAs ? (
+            // Honest labeling in View-as-User mode: this panel must never read
+            // as "you are logged in as this validator". Exit lives in the
+            // banner, so logout (which would end the ADMIN's session) is hidden.
+            <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide">Admin view</p>
+              <p className="text-sm font-medium text-slate-800 truncate">Viewing: {user.name}</p>
               <p className="text-xs text-slate-500">{user.role}</p>
             </div>
+          ) : (
+            <>
+              {user && (
+                <div className="px-3 mb-2">
+                  <p className="text-sm font-medium text-slate-800 truncate">{user.name}</p>
+                  <p className="text-xs text-slate-500">{user.role}</p>
+                </div>
+              )}
+              <button
+                onClick={logout}
+                className="w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition"
+              >
+                Logout
+              </button>
+            </>
           )}
-          <button
-            onClick={logout}
-            className="w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition"
-          >
-            Logout
-          </button>
         </div>
       </aside>
     </>
