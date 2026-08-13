@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
 import ScrollController from './ScrollController';
@@ -49,6 +50,28 @@ export default function IdeaValidatorLanding() {
             'radial-gradient(ellipse 80% 60% at 50% 30%, rgba(59,130,246,0.05), transparent 60%), radial-gradient(ellipse 60% 50% at 80% 80%, rgba(37,99,235,0.04), transparent 55%)',
         }}
       />
+
+      {/* Fixed top nav — sits above every scroll overlay (they top out at
+          zIndex 25). The landing previously had no way to reach login or any
+          explainer without scrolling to a CTA stage. */}
+      <nav className="fixed top-0 inset-x-0" style={{ zIndex: 40 }}>
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+          <Link href="/" className="font-bold text-slate-900 text-sm sm:text-base">
+            💡 Idea<span className="text-blue-600">Validator</span>
+          </Link>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Link href="/tutorial" className="text-sm text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-lg hover:bg-white/70">
+              Tutorial
+            </Link>
+            <Link href="/auth/login" className="text-sm text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-lg hover:bg-white/70">
+              Log in
+            </Link>
+            <Link href="/auth/register/founder" className="text-sm bg-blue-600 text-white px-4 py-1.5 rounded-lg font-semibold hover:bg-blue-700 shadow-sm">
+              Get started
+            </Link>
+          </div>
+        </div>
+      </nav>
 
       <SceneText />
       <HeroFeatures />
