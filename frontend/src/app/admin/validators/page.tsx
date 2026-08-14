@@ -4,9 +4,12 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { getRealUser } from '@/lib/auth';
+import { useToast, useConfirm } from '@/components/ui/feedback';
 
 export default function AdminValidatorsPage() {
   const router = useRouter();
+  const toast = useToast();
+  const confirmDialog = useConfirm();
   const [pending, setPending] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -22,17 +25,25 @@ export default function AdminValidatorsPage() {
     try {
       await api.approveValidator(id);
       setPending(p => p.filter(v => v.id !== id));
-    } catch (err: any) { alert(err.message); }
+      toast.success('Validator approved — they can start reviewing ideas.');
+    } catch (err: any) { toast.error(err.message); }
     finally { setActionLoading(null); }
   };
 
   const reject = async (id: string) => {
-    if (!confirm('Reject this validator application?')) return;
+    const ok = await confirmDialog({
+      title: 'Reject this application?',
+      body: 'The applicant will not be able to validate ideas on the platform.',
+      confirmLabel: 'Reject Application',
+      danger: true,
+    });
+    if (!ok) return;
     setActionLoading(id + '_reject');
     try {
       await api.rejectValidator(id);
       setPending(p => p.filter(v => v.id !== id));
-    } catch (err: any) { alert(err.message); }
+      toast.success('Application rejected.');
+    } catch (err: any) { toast.error(err.message); }
     finally { setActionLoading(null); }
   };
 

@@ -21,16 +21,26 @@ import type { Assumption } from '@/lib/assumptionCheck';
 import ScoreBreakdown from '@/components/founder/ScoreBreakdown';
 import ShareIdeaModal from '@/components/founder/ShareIdeaModal';
 import VersionTimeline, { IdeaVersion } from '@/components/founder/VersionTimeline';
+import StatusBadge, { type BadgeTone } from '@/components/ui/StatusBadge';
+import EmptyState from '@/components/ui/EmptyState';
+import { useToast } from '@/components/ui/feedback';
 
-const NAV_LINKS = [
-  { id: 'glance', label: 'At a Glance' },
-  { id: 'breakdown', label: 'Breakdown' },
-  { id: 'customer-validation', label: 'Customer Validation' },
-  { id: 'risks', label: 'Risks' },
-  { id: 'ai-summary', label: 'AI Summary' },
-  { id: 'feedback', label: 'Feedback' },
-  { id: 'people', label: 'People' },
-];
+// Report tones (positive/warning/critical) → shared badge tones.
+const REPORT_TONE_TO_BADGE: Record<string, BadgeTone> = {
+  positive: 'success',
+  warning: 'warning',
+  critical: 'danger',
+};
+
+// The page's content grouped by the question it answers, not by scroll order.
+const TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'scores', label: 'Expert Scores' },
+  { id: 'surveys', label: 'Surveys' },
+  { id: 'insights', label: 'Insights' },
+  { id: 'experts', label: 'Experts & Feedback' },
+] as const;
+type TabId = (typeof TABS)[number]['id'];
 
 // Renders **bold** spans from AI text as real <strong> instead of raw asterisks.
 function renderInlineMarkdown(text: string): ReactNode {
@@ -46,6 +56,7 @@ function renderInlineMarkdown(text: string): ReactNode {
 export default function IdeaDashboardPage() {
   const router = useRouter();
   const params = useParams();
+  const toast = useToast();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -65,11 +76,15 @@ export default function IdeaDashboardPage() {
   const [viewMode, setViewMode] = useState(false);
   const [benchmark, setBenchmark] = useState<any>(null);
   const [assumptionList, setAssumptionList] = useState<Assumption[]>([]);
+  const [tab, setTab] = useState<TabId>('overview');
 
   useEffect(() => {
     const user = getStoredUser();
     if (!user || user.role !== 'FOUNDER') { router.push('/auth/login'); return; }
     setViewMode(isViewMode());
+    // Deep link: #scores etc. opens that tab directly.
+    const fromHash = window.location.hash.replace('#', '');
+    if (TABS.some((t) => t.id === fromHash)) setTab(fromHash as TabId);
     api.getIdeaBenchmark(params.id as string).then(setBenchmark).catch(() => {});
     api.getIdeaDashboard(params.id as string)
       .then((d) => {
@@ -104,7 +119,26 @@ export default function IdeaDashboardPage() {
       .finally(() => setSurveysLoaded(true));
   }, []);
 
-  if (loading) return <div className="flex items-center justify-center min-h-screen"><div className="text-slate-500">Loading dashboard...</div></div>;
+  const switchTab = (id: TabId) => {
+    setTab(id);
+    // keep the URL shareable without adding history entries per click
+    window.history.replaceState(null, '', `#${id}`);
+  };
+
+  if (loading) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
+        <div className="animate-pulse space-y-6">
+          <div className="h-8 w-1/2 bg-slate-200/70 rounded-md" />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[0, 1, 2, 3].map((i) => <div key={i} className="h-24 bg-slate-200/70 rounded-xl" />)}
+          </div>
+          <div className="h-9 w-full max-w-md bg-slate-200/70 rounded-lg" />
+          <div className="h-64 bg-slate-200/70 rounded-xl" />
+        </div>
+      </div>
+    );
+  }
   if (error) return <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error}</div></div>;
 
   const { idea, aggregated } = data || {};
@@ -415,473 +449,622 @@ export default function IdeaDashboardPage() {
     'NEXT STEPS': { icon: '→', color: 'text-blue-700', bg: 'bg-blue-100' },
   };
 
-  return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
-      {/* Header / Hero */}
-      <div className="mb-6">
-        <div className="flex flex-wrap items-center gap-2 mb-3">
-          {idea?.industryCategory && <span className="text-xs font-medium bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">{idea.industryCategory}</span>}
-          {idea?.stage && <span className="text-xs font-medium bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">{idea.stage.replace('_', ' ')}</span>}
+  // ---------- header derivations ----------
+
+  const headerStatus = expertDone
+    ? { label: heroStatus.label, tone: REPORT_TONE_TO_BADGE[heroStatus.tone] || 'neutral' }
+    : { label: 'Awaiting expert reviews', tone: 'info' as BadgeTone };
+
+  // One primary next action, picked from the idea's actual state.
+  const primaryAction = expertDone
+    ? { kind: 'report' as const }
+    : surveys.length === 0
+      ? { kind: 'survey' as const }
+      : null;
+
+  const tabCounts: Partial<Record<TabId, number>> = {
+    surveys: surveys.length,
+    experts: a.totalValidations || 0,
+  };
+
+  // ---------- reusable section blocks (JSX kept intact, only regrouped) ----------
+
+  const evidenceCard = (a.totalValidations > 0 || marketResponseLabel) && (
+    <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
+      <h3 className="font-semibold text-slate-900 mb-1">Validation Evidence</h3>
+      <p className="text-xs text-slate-500 mb-4">Two separate evidence sources, shown side by side — deliberately never combined into one score.</p>
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div className="border border-slate-200 rounded-lg p-4">
+          <p className="text-xs text-slate-500 mb-1">Expert Perspective</p>
+          {a.totalValidations > 0 ? (
+            <p className={`text-lg font-semibold ${TONE_DOM[heroStatus.tone].text}`}>{heroStatus.label}</p>
+          ) : (
+            <p className="text-sm text-slate-400">No expert validations yet</p>
+          )}
         </div>
-        <h1 className="text-3xl font-bold text-slate-900">{idea?.title}</h1>
-        <p className="text-sm text-slate-500 mt-1">{a.totalValidations || 0} validation{a.totalValidations !== 1 ? 's' : ''} received</p>
+        <div className="border border-slate-200 rounded-lg p-4">
+          <p className="text-xs text-slate-500 mb-1">Market Response</p>
+          {marketResponseLabel ? (
+            <p className={`text-lg font-semibold ${TONE_DOM[marketResponseLabel.tone].text}`}>{marketResponseLabel.label}</p>
+          ) : (
+            <p className="text-sm text-slate-400">Not enough survey responses yet</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  const glanceBlock = (strongest || weakest || allCategoriesTied) && (
+    <div className="grid md:grid-cols-2 gap-4 mb-6">
+      {strongest ? (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6">
+          <div className="flex items-center gap-1.5 text-emerald-700 text-xs font-semibold uppercase tracking-wide mb-2">
+            <span>▲</span> Biggest Strength
+          </div>
+          <p className="text-lg font-semibold text-slate-900">{strongest.label}</p>
+          <p className="text-sm text-slate-600 mt-1">{strongest.pct.toFixed(0)}% of max — the strongest area across validator scoring.</p>
+        </div>
+      ) : allCategoriesTied && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
+          <div className="flex items-center gap-1.5 text-slate-500 text-xs font-semibold uppercase tracking-wide mb-2">
+            <span>▲</span> Biggest Strength
+          </div>
+          <p className="text-sm text-slate-600">No clear strength identified yet. All validation categories currently have the same average score.</p>
+        </div>
+      )}
+      {weakest ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
+          <div className="flex items-center gap-1.5 text-amber-700 text-xs font-semibold uppercase tracking-wide mb-2">
+            <span>▼</span> Biggest Risk
+          </div>
+          <p className="text-lg font-semibold text-slate-900">{weakest.label}</p>
+          <p className="text-sm text-slate-600 mt-1">{weakest.pct.toFixed(0)}% of max — the area validators rated weakest.</p>
+        </div>
+      ) : allCategoriesTied && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
+          <div className="flex items-center gap-1.5 text-slate-500 text-xs font-semibold uppercase tracking-wide mb-2">
+            <span>▼</span> Biggest Risk
+          </div>
+          <p className="text-sm text-slate-600">No single highest-risk category identified yet. All validation categories currently have the same average score.</p>
+        </div>
+      )}
+    </div>
+  );
+
+  const aiSummaryBlock = (
+    <div className="bg-gradient-to-br from-blue-50 to-slate-50 border border-blue-200 rounded-xl p-6 mb-6">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div>
+          <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+            <span className="text-blue-600">✦</span> AI Summary
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">Powered by Groq AI — synthesises all validator scores and feedback</p>
+        </div>
+        {!aiSummary && (
+          <button onClick={() => generateAiSummary(false)} disabled={aiLoading || viewMode}
+            title={viewMode ? 'This action is disabled while viewing as another user.' : undefined}
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition disabled:opacity-60">
+            {aiLoading ? (
+              <><span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span> Generating...</>
+            ) : 'Generate AI Summary'}
+          </button>
+        )}
+        {aiSummary && !viewMode && (
+          <button onClick={() => generateAiSummary(true)} disabled={aiLoading} className="text-xs text-blue-600 hover:underline disabled:opacity-50">
+            {aiLoading ? 'Regenerating…' : 'Regenerate'}
+          </button>
+        )}
       </div>
 
-      <ValidationProgress steps={progressSteps} />
+      {aiError && <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-3 text-sm">{aiError}</div>}
 
-      <VersionTimeline versions={versions} />
+      {aiLoading && (
+        <div className="flex flex-col items-center justify-center py-8 text-blue-600">
+          <div className="animate-spin w-8 h-8 border-3 border-blue-200 border-t-blue-600 rounded-full mb-3 border-[3px]"></div>
+          <p className="text-sm">Analysing your validation data...</p>
+        </div>
+      )}
 
-      {/* Mass Survey — a separate evidence source from Expert Validation, shown side by side and never combined into one score */}
-      {surveys.length > 0 && (
-        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-8">
-          <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-            <div>
-              <h3 className="font-semibold text-slate-900">Mass Survey</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Public survey responses — a separate evidence source from Expert Validation</p>
-            </div>
-            <Link href="/founder/surveys" className="text-sm text-blue-600 hover:text-blue-700 font-medium">Manage Surveys &rarr;</Link>
-          </div>
-
-          {surveyAnalytics && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5 pb-5 border-b border-slate-100">
-              <div>
-                <p className="text-2xl font-bold text-slate-900 tabular-nums">{surveyAnalytics.summary.totalResponses}</p>
-                <p className="text-xs text-slate-500">Responses</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-slate-900 tabular-nums">{positivePct != null ? `${positivePct.toFixed(0)}%` : 'N/A'}</p>
-                <p className="text-xs text-slate-500">Positive</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-slate-900 tabular-nums">{tryYes ? `${tryYes.pct.toFixed(0)}%` : 'N/A'}</p>
-                <p className="text-xs text-slate-500">Would Try</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-slate-900 tabular-nums">{surveyAnalytics.summary.avgCompletionTime}</p>
-                <p className="text-xs text-slate-500">Avg. Time</p>
-              </div>
-            </div>
-          )}
-
-          <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {surveys.map((s) => (
-              <Link key={s.id} href={s.status === 'DRAFT' ? `/founder/surveys/${s.id}/edit` : `/founder/surveys/${s.id}/analytics`}
-                className="border border-slate-200 rounded-lg p-4 hover:border-blue-300 transition">
-                <p className="text-sm font-medium text-slate-900 truncate">{s.title || 'Untitled survey'}</p>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${s.status === 'LIVE' ? 'bg-emerald-50 text-emerald-700' : s.status === 'CLOSED' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>{s.status}</span>
-                  {s.status !== 'DRAFT' && <span className="text-xs text-slate-400">{s._count?.responses ?? 0} responses</span>}
+      {aiSummary && (() => {
+        const sections = parseAiSummary(aiSummary);
+        return (
+          <div className="grid md:grid-cols-2 gap-4">
+            {sections.map(({ heading, body }) => {
+              const meta = sectionMeta[heading] || { icon: '•', color: 'text-slate-700', bg: 'bg-slate-100' };
+              return (
+                <div key={heading} className={`bg-white rounded-lg p-5 border border-slate-200 ${heading === 'VERDICT' ? 'md:col-span-2' : ''}`}>
+                  <div className={`inline-flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded-full mb-3 ${meta.bg} ${meta.color}`}>
+                    <span>{meta.icon}</span>{heading === 'NEXT STEPS' ? 'WHAT SHOULD YOU DO NEXT?' : heading}
+                  </div>
+                  {heading === 'VERDICT' && (
+                    <p className="text-base text-slate-800 leading-relaxed font-medium">{renderInlineMarkdown(body)}</p>
+                  )}
+                  {heading === 'NEXT STEPS' && (
+                    <ol className="space-y-2.5">
+                      {toSentences(body).map((sentence, i) => (
+                        <li key={i} className="flex gap-2.5 text-sm text-slate-700 leading-relaxed">
+                          <span className="shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
+                          <span>{renderInlineMarkdown(sentence)}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                  {(heading === "WHAT'S WORKING" || heading === 'WHAT NEEDS WORK') && (
+                    <ul className="space-y-2">
+                      {toSentences(body).map((sentence, i) => (
+                        <li key={i} className="flex gap-2 text-sm text-slate-700 leading-relaxed">
+                          <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${heading === "WHAT'S WORKING" ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                          <span>{renderInlineMarkdown(sentence)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {!aiSummary && !aiLoading && !aiError && (
+        <p className="text-sm text-slate-500 text-center py-4">Click &quot;Generate AI Summary&quot; to get an instant analysis of your validation results.</p>
+      )}
+    </div>
+  );
+
+  const surveysBlock = surveys.length > 0 ? (
+    <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div>
+          <h3 className="font-semibold text-slate-900">Mass Survey</h3>
+          <p className="text-xs text-slate-500 mt-0.5">Public survey responses — a separate evidence source from Expert Validation</p>
+        </div>
+        <Link href="/founder/surveys" className="text-sm text-blue-600 hover:text-blue-700 font-medium">Manage Surveys &rarr;</Link>
+      </div>
+
+      {surveyAnalytics && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5 pb-5 border-b border-slate-100">
+          <div>
+            <p className="text-2xl font-bold text-slate-900 tabular-nums">{surveyAnalytics.summary.totalResponses}</p>
+            <p className="text-xs text-slate-500">Responses</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-slate-900 tabular-nums">{positivePct != null ? `${positivePct.toFixed(0)}%` : 'N/A'}</p>
+            <p className="text-xs text-slate-500">Positive</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-slate-900 tabular-nums">{tryYes ? `${tryYes.pct.toFixed(0)}%` : 'N/A'}</p>
+            <p className="text-xs text-slate-500">Would Try</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-slate-900 tabular-nums">{surveyAnalytics.summary.avgCompletionTime}</p>
+            <p className="text-xs text-slate-500">Avg. Time</p>
+          </div>
+        </div>
+      )}
+
+      <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
+        {surveys.map((sv) => (
+          <Link key={sv.id} href={sv.status === 'DRAFT' ? `/founder/surveys/${sv.id}/edit` : `/founder/surveys/${sv.id}/analytics`}
+            className="border border-slate-200 rounded-lg p-4 hover:border-blue-300 transition">
+            <p className="text-sm font-medium text-slate-900 truncate">{sv.title || 'Untitled survey'}</p>
+            <div className="flex items-center gap-2 mt-2">
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${sv.status === 'LIVE' ? 'bg-emerald-50 text-emerald-700' : sv.status === 'CLOSED' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>{sv.status}</span>
+              {sv.status !== 'DRAFT' && <span className="text-xs text-slate-400">{sv._count?.responses ?? 0} responses</span>}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  ) : (
+    <EmptyState
+      icon="📊"
+      title="No surveys for this idea yet"
+      body="Expert opinions tell you if the idea is sound — a survey tells you if real customers actually want it. Run one to add market evidence next to your expert scores."
+      action={
+        <Link href="/founder/surveys" className="inline-block bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition">
+          Create a Survey
+        </Link>
+      }
+    />
+  );
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+      {/* ---------- header: who, how it's doing, what next ---------- */}
+      <div className="mb-6">
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <StatusBadge tone={headerStatus.tone as BadgeTone} dot>{headerStatus.label}</StatusBadge>
+              {idea?.industryCategory && <span className="text-xs font-medium bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">{idea.industryCategory}</span>}
+              {idea?.stage && <span className="text-xs font-medium bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">{idea.stage.replace('_', ' ')}</span>}
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">{idea?.title}</h1>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {expertDone && (
+              <>
+                {viewMode ? (
+                  <span title="This action is disabled while viewing as another user."
+                    className="flex items-center gap-2 bg-slate-100 text-slate-400 px-4 py-2 rounded-lg text-sm font-semibold cursor-not-allowed">
+                    ↻ Improve &amp; Re-validate
+                  </span>
+                ) : (
+                  <Link href={`/founder/submit-idea?revise=${idea?.id}`}
+                    className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold hover:border-blue-300 hover:text-blue-700 transition">
+                    ↻ Improve &amp; Re-validate
+                  </Link>
+                )}
+                <button onClick={() => viewMode ? toast.info('This action is disabled while viewing as another user.') : setShareOpen(true)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition ${viewMode ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white border border-slate-200 text-slate-700 hover:border-blue-300 hover:text-blue-700'}`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342a3 3 0 100-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684zm0-9.316a3 3 0 105.368-2.684 3 3 0 00-5.368 2.684z" />
+                  </svg>
+                  Share
+                </button>
+              </>
+            )}
+            {primaryAction?.kind === 'report' && (
+              <button onClick={handleDownloadReport} disabled={downloadingReport}
+                className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition disabled:opacity-60">
+                {downloadingReport ? (
+                  <><span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span> Preparing...</>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                    </svg>
+                    Download Report
+                  </>
+                )}
+              </button>
+            )}
+            {primaryAction?.kind === 'survey' && (
+              <Link href="/founder/surveys" className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition">
+                Run a Survey
               </Link>
-            ))}
+            )}
           </div>
         </div>
-      )}
+        {reportError && <p className="text-sm text-red-600 mt-2 text-right">{reportError}</p>}
 
-      {/* Two separate evidence sources, shown side by side — deliberately never combined into one score */}
-      {(a.totalValidations > 0 || marketResponseLabel) && (
-        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-8">
-          <h3 className="font-semibold text-slate-900 mb-4">Validation Evidence</h3>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="border border-slate-200 rounded-lg p-4">
-              <p className="text-xs text-slate-500 mb-1">Expert Perspective</p>
-              {a.totalValidations > 0 ? (
-                <p className={`text-lg font-semibold ${TONE_DOM[heroStatus.tone].text}`}>{heroStatus.label}</p>
-              ) : (
-                <p className="text-sm text-slate-400">No expert validations yet</p>
-              )}
-            </div>
-            <div className="border border-slate-200 rounded-lg p-4">
-              <p className="text-xs text-slate-500 mb-1">Market Response</p>
-              {marketResponseLabel ? (
-                <p className={`text-lg font-semibold ${TONE_DOM[marketResponseLabel.tone].text}`}>{marketResponseLabel.label}</p>
-              ) : (
-                <p className="text-sm text-slate-400">Not enough survey responses yet</p>
-              )}
-            </div>
+        {/* Key numbers — the "how is it doing" strip, always visible above the tabs. */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
+          <div className="bg-blue-600 text-white rounded-xl p-4">
+            <p className="text-[11px] font-medium text-blue-200 uppercase tracking-wide">Overall Score</p>
+            <p className="text-2xl font-bold tabular-nums mt-1">
+              {expertDone ? <>{(a.overallScore || 0).toFixed(0)}<span className="text-sm font-medium text-blue-200">/100</span></> : '—'}
+            </p>
+            <p className="text-[11px] text-blue-100 mt-0.5">{expertDone ? heroStatus.label : 'awaiting reviews'}</p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">Expert Reviews</p>
+            <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">{a.totalValidations || 0}</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">across 12 frameworks</p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">Survey Responses</p>
+            <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">{totalSurveyResponses}</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">{surveys.length} survey{surveys.length !== 1 ? 's' : ''} linked</p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">Benchmark</p>
+            <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">
+              {benchmark?.percentile != null ? `Top ${Math.max(1, 100 - benchmark.percentile)}%` : '—'}
+            </p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {benchmark?.percentile != null
+                ? `beats ${benchmark.percentile}% of ${benchmark.cohortSize} validated ideas`
+                : 'needs more validated ideas to compare'}
+            </p>
           </div>
         </div>
-      )}
+      </div>
 
-      {a.totalValidations === 0 && (
+      {/* ---------- tabs ---------- */}
+      <div className="border-b border-slate-200 mb-6 -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div className="flex gap-1 overflow-x-auto whitespace-nowrap -mb-px">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => switchTab(t.id)}
+              className={`px-3.5 py-2.5 text-sm font-medium border-b-2 transition shrink-0 ${
+                tab === t.id
+                  ? 'border-blue-600 text-blue-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+              }`}
+            >
+              {t.label}
+              {tabCounts[t.id] != null && tabCounts[t.id]! > 0 && (
+                <span className={`ml-1.5 text-xs tabular-nums ${tab === t.id ? 'text-blue-500' : 'text-slate-400'}`}>{tabCounts[t.id]}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ---------- Overview ---------- */}
+      {tab === 'overview' && (
         <>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-8 text-center">
-            <p className="text-amber-700 font-medium">No validations received yet. Check back later!</p>
-          </div>
-          {gapFinding && <ValidationGapCard finding={gapFinding} ideaId={idea?.id} />}
-          {idea && (
-            <AssumptionCheckCard
-              ideaId={idea.id}
-              assumptions={assumptionList}
-              aggregated={a}
-              surveyAnalytics={surveyAnalytics}
-              gapKey={gapFinding?.key}
-              readOnly={viewMode}
-              onSaved={setAssumptionList}
-            />
+          {!expertDone && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 mb-6">
+              <p className="text-amber-800 text-sm font-medium">
+                Our experts are reviewing your idea — no validations in yet. Scores appear here the moment the first review lands.
+              </p>
+            </div>
           )}
+
+          <ValidationProgress steps={progressSteps} />
+
+          {evidenceCard}
+
+          {expertDone && glanceBlock}
+
+          {expertDone ? aiSummaryBlock : (
+            <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
+              <h3 className="font-semibold text-slate-900 mb-1">While you wait</h3>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Expert reviews usually take a little time. Meanwhile you can collect market evidence with a survey
+                (see the <button onClick={() => switchTab('surveys')} className="text-blue-600 font-medium hover:underline">Surveys</button> tab)
+                and write down the assumptions your idea depends on
+                (<button onClick={() => switchTab('insights')} className="text-blue-600 font-medium hover:underline">Insights</button> tab) —
+                the platform will check them against your evidence automatically.
+              </p>
+            </div>
+          )}
+
+          <VersionTimeline versions={versions} />
         </>
       )}
 
-      {a.totalValidations > 0 && (
-        <>
-          {/* Dominant score row */}
-          <div className="grid md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-blue-600 text-white rounded-2xl p-8 flex flex-col items-center justify-center text-center">
-              <div className="text-5xl font-black tabular-nums">
-                {(a.overallScore || 0).toFixed(0)}<span className="text-xl font-semibold text-blue-200">/100</span>
+      {/* ---------- Expert Scores ---------- */}
+      {tab === 'scores' && (
+        !expertDone ? (
+          <EmptyState
+            icon="🧑‍⚖️"
+            title="No expert scores yet"
+            body="Approved industry experts score your idea across 12 frameworks — market opportunity, feasibility, founder fit and more. Scores appear here as soon as the first review is submitted."
+          />
+        ) : (
+          <>
+            {/* Dominant score row */}
+            <div className="grid md:grid-cols-3 gap-4 mb-6">
+              <div className="bg-blue-600 text-white rounded-2xl p-8 flex flex-col items-center justify-center text-center">
+                <div className="text-5xl font-black tabular-nums">
+                  {(a.overallScore || 0).toFixed(0)}<span className="text-xl font-semibold text-blue-200">/100</span>
+                </div>
+                <div className="text-blue-100 text-sm font-medium mt-1">Overall Score</div>
+                <div className="mt-3 inline-block text-xs font-semibold bg-white/15 px-3 py-1 rounded-full">{heroStatus.label}</div>
+                {benchmark?.percentile != null && (
+                  <div className="mt-3 text-xs text-blue-100">
+                    Scores higher than <span className="font-bold text-white">{benchmark.percentile}%</span> of validated ideas
+                    {benchmark.industryPercentile != null && (
+                      <> · <span className="font-bold text-white">{benchmark.industryPercentile}%</span> in {idea?.industryCategory}</>
+                    )}
+                    <span className="block text-[10px] text-blue-200/80 mt-0.5">compared with {benchmark.cohortSize} validated idea{benchmark.cohortSize !== 1 ? 's' : ''} on this platform</span>
+                  </div>
+                )}
               </div>
-              <div className="text-blue-100 text-sm font-medium mt-1">Overall Score</div>
-              <div className="mt-3 inline-block text-xs font-semibold bg-white/15 px-3 py-1 rounded-full">{heroStatus.label}</div>
-              {benchmark?.percentile != null && (
-                <div className="mt-3 text-xs text-blue-100">
-                  Scores higher than <span className="font-bold text-white">{benchmark.percentile}%</span> of validated ideas
-                  {benchmark.industryPercentile != null && (
-                    <> · <span className="font-bold text-white">{benchmark.industryPercentile}%</span> in {idea?.industryCategory}</>
-                  )}
-                  <span className="block text-[10px] text-blue-200/80 mt-0.5">compared with {benchmark.cohortSize} validated idea{benchmark.cohortSize !== 1 ? 's' : ''} on this platform</span>
-                </div>
-              )}
-            </div>
-            <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 flex flex-col items-center justify-center text-center">
-              <div className={`text-3xl font-black mb-1 ${TONE_DOM[sh.tone].text}`}>{(a.sharkTankAvg || 0).toFixed(0)}</div>
-              <div className="text-slate-500 text-sm">Shark Tank Score / 100</div>
-              <div className={`text-xs font-medium mt-1 ${TONE_DOM[sh.tone].text}`}>{sh.label}</div>
-            </div>
-            <div className={`border rounded-2xl p-6 flex flex-col items-center justify-center text-center ${TONE_DOM[s.tone].bg} ${TONE_DOM[s.tone].border}`}>
-              <div className={`text-3xl font-black mb-1 ${TONE_DOM[s.tone].text}`}>{(a.startupSuccessAvg || 0).toFixed(0)}</div>
-              <div className="text-slate-500 text-sm">Validation Score / 100</div>
-              <div className={`text-xs font-semibold mt-1 ${TONE_DOM[s.tone].text}`}>{s.label}</div>
-            </div>
-          </div>
-
-          {/* The score says how validated the idea is; this says what still
-              needs proving — first thing under the score by design. */}
-          {gapFinding && <ValidationGapCard finding={gapFinding} ideaId={idea?.id} />}
-          {idea && (
-            <AssumptionCheckCard
-              ideaId={idea.id}
-              assumptions={assumptionList}
-              aggregated={a}
-              surveyAnalytics={surveyAnalytics}
-              gapKey={gapFinding?.key}
-              readOnly={viewMode}
-              onSaved={setAssumptionList}
-            />
-          )}
-
-          <ScoreBreakdown aggregated={a} />
-
-          <div className="flex flex-wrap justify-end gap-2 mb-6">
-            {viewMode ? (
-              <span title="This action is disabled while viewing as another user."
-                className="flex items-center gap-2 bg-slate-100 text-slate-400 px-4 py-2.5 rounded-lg text-sm font-semibold cursor-not-allowed">
-                ↻ Improve &amp; Re-validate
-              </span>
-            ) : (
-              <Link href={`/founder/submit-idea?revise=${idea?.id}`}
-                className="flex items-center gap-2 bg-white border border-blue-200 text-blue-700 px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-50 transition">
-                ↻ Improve &amp; Re-validate
-              </Link>
-            )}
-            <button onClick={() => viewMode ? alert('This action is disabled while viewing as another user.') : setShareOpen(true)}
-              disabled={false}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition ${viewMode ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342a3 3 0 100-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684zm0-9.316a3 3 0 105.368-2.684 3 3 0 00-5.368 2.684z" />
-              </svg>
-              Share Validation
-            </button>
-            <button onClick={handleDownloadReport} disabled={downloadingReport}
-              className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-slate-800 transition disabled:opacity-60">
-              {downloadingReport ? (
-                <><span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span> Preparing report...</>
-              ) : (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
-                  </svg>
-                  Download Validation Report
-                </>
-              )}
-            </button>
-          </div>
-          {reportError && <p className="text-sm text-red-600 mb-6 text-right">{reportError}</p>}
-
-          {/* Quick nav */}
-          <div className="flex gap-4 text-xs text-slate-500 overflow-x-auto whitespace-nowrap mb-8 pb-1 border-b border-slate-200">
-            {NAV_LINKS.map(l => (
-              <a key={l.id} href={`#${l.id}`} className="hover:text-blue-600 transition-colors">{l.label}</a>
-            ))}
-          </div>
-
-          {/* At a Glance */}
-          {(strongest || weakest || allCategoriesTied) && (
-            <div id="glance" className="scroll-mt-6 grid md:grid-cols-2 gap-4 mb-8">
-              {strongest ? (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6">
-                  <div className="flex items-center gap-1.5 text-emerald-700 text-xs font-semibold uppercase tracking-wide mb-2">
-                    <span>▲</span> Biggest Strength
-                  </div>
-                  <p className="text-lg font-semibold text-slate-900">{strongest.label}</p>
-                  <p className="text-sm text-slate-600 mt-1">{strongest.pct.toFixed(0)}% of max — the strongest area across validator scoring.</p>
-                </div>
-              ) : allCategoriesTied && (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
-                  <div className="flex items-center gap-1.5 text-slate-500 text-xs font-semibold uppercase tracking-wide mb-2">
-                    <span>▲</span> Biggest Strength
-                  </div>
-                  <p className="text-sm text-slate-600">No clear strength identified yet. All validation categories currently have the same average score.</p>
-                </div>
-              )}
-              {weakest ? (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
-                  <div className="flex items-center gap-1.5 text-amber-700 text-xs font-semibold uppercase tracking-wide mb-2">
-                    <span>▼</span> Biggest Risk
-                  </div>
-                  <p className="text-lg font-semibold text-slate-900">{weakest.label}</p>
-                  <p className="text-sm text-slate-600 mt-1">{weakest.pct.toFixed(0)}% of max — the area validators rated weakest.</p>
-                </div>
-              ) : allCategoriesTied && (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
-                  <div className="flex items-center gap-1.5 text-slate-500 text-xs font-semibold uppercase tracking-wide mb-2">
-                    <span>▼</span> Biggest Risk
-                  </div>
-                  <p className="text-sm text-slate-600">No single highest-risk category identified yet. All validation categories currently have the same average score.</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Validation Breakdown */}
-          <div id="breakdown" className="scroll-mt-6 bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-8">
-            <h3 className="font-semibold text-slate-900 mb-1">Validation Breakdown</h3>
-            <p className="text-xs text-slate-500 mb-6">All 8 scoring categories, out of 50 points each.</p>
-            <div className="grid lg:grid-cols-2 gap-x-10 gap-y-5">
-              {matrixWithPct.map(c => {
-                const st = breakdownStatus(c.pct);
-                return (
-                  <div key={c.key}>
-                    <div className="flex justify-between items-baseline mb-1.5 gap-2">
-                      <span className="text-sm text-slate-700">{c.label}</span>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${TONE_DOM[st.tone].chip}`}>{st.label}</span>
-                        <span className="text-sm font-semibold text-slate-900 tabular-nums">{c.score.toFixed(1)}/50</span>
-                      </div>
-                    </div>
-                    <div className="w-full bg-slate-100 rounded-full h-2">
-                      <div className={`h-2 rounded-full ${TONE_DOM[st.tone].bar}`} style={{ width: `${Math.min(c.pct, 100)}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {matrixWithPct.length >= 3 && (
-              <div className="border-t border-slate-100 mt-6 pt-6">
-                <RadarChart data={matrixWithPct.map(c => ({ label: c.short, value: c.pct }))} />
+              <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 flex flex-col items-center justify-center text-center">
+                <div className={`text-3xl font-black mb-1 ${TONE_DOM[sh.tone].text}`}>{(a.sharkTankAvg || 0).toFixed(0)}</div>
+                <div className="text-slate-500 text-sm">Shark Tank Score / 100</div>
+                <div className={`text-xs font-medium mt-1 ${TONE_DOM[sh.tone].text}`}>{sh.label}</div>
               </div>
-            )}
-          </div>
+              <div className={`border rounded-2xl p-6 flex flex-col items-center justify-center text-center ${TONE_DOM[s.tone].bg} ${TONE_DOM[s.tone].border}`}>
+                <div className={`text-3xl font-black mb-1 ${TONE_DOM[s.tone].text}`}>{(a.startupSuccessAvg || 0).toFixed(0)}</div>
+                <div className="text-slate-500 text-sm">Validation Score / 100</div>
+                <div className={`text-xs font-semibold mt-1 ${TONE_DOM[s.tone].text}`}>{s.label}</div>
+              </div>
+            </div>
 
-          {/* Customer Validation */}
-          {a.customerValidation && (
-            <div id="customer-validation" className="scroll-mt-6 bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-8">
-              <h3 className="font-semibold text-slate-900 mb-6">Customer Validation</h3>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
-                {[
-                  { label: 'Would Use It', val: a.customerValidation.wouldUse },
-                  { label: 'Would Pay', val: a.customerValidation.wouldPay },
-                  { label: 'Would Recommend', val: a.customerValidation.wouldRecommend },
-                  { label: 'Solves Real Problem', val: a.customerValidation.solvesRealProblem },
-                  { label: 'Better Than Alternatives', val: a.customerValidation.betterThanAlternatives },
-                ].map(item => {
-                  const tone = TONE_DOM[pctTone(item.val)];
+            {/* Validation Breakdown */}
+            <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
+              <h3 className="font-semibold text-slate-900 mb-1">Validation Breakdown</h3>
+              <p className="text-xs text-slate-500 mb-6">All 8 scoring categories, out of 50 points each.</p>
+              <div className="grid lg:grid-cols-2 gap-x-10 gap-y-5">
+                {matrixWithPct.map(c => {
+                  const st = breakdownStatus(c.pct);
                   return (
-                    <div key={item.label} className="text-center">
-                      <div className={`text-3xl md:text-4xl font-black tabular-nums ${tone.text}`}>{item.val.toFixed(0)}%</div>
-                      <div className="text-xs text-slate-500 mt-1.5 mb-2">{item.label}</div>
-                      <div className="w-full bg-slate-100 rounded-full h-1.5">
-                        <div className={`h-1.5 rounded-full ${tone.bar}`} style={{ width: `${Math.min(item.val, 100)}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Risk Assessment */}
-          {a.riskSummary && Object.keys(a.riskSummary).length > 0 && (
-            <div id="risks" className="scroll-mt-6 bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-8">
-              <h3 className="font-semibold text-slate-900 mb-4">Risk Assessment</h3>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                {Object.entries(a.riskSummary).map(([risk, counts]: any) => {
-                  const level = dominantRisk(counts);
-                  const tone = TONE_DOM[riskTone(level)];
-                  return (
-                    <div key={risk} className={`border rounded-lg p-4 ${tone.chip} ${tone.border}`}>
-                      <p className="text-xs font-medium opacity-70 mb-2">{RISK_LABELS[risk] || risk}</p>
-                      <p className="text-sm font-bold">{RISK_LABEL[level]}</p>
-                      <p className="text-[11px] mt-2 opacity-70">{counts.LOW || 0} low · {counts.MEDIUM || 0} med · {counts.HIGH || 0} high</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* AI Summary */}
-          <div id="ai-summary" className="scroll-mt-6 bg-gradient-to-br from-blue-50 to-slate-50 border border-blue-200 rounded-xl p-6 mb-8">
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-              <div>
-                <h3 className="font-semibold text-slate-900 flex items-center gap-2">
-                  <span className="text-blue-600">✦</span> AI Summary
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">Powered by Groq AI — synthesises all validator scores and feedback</p>
-              </div>
-              {!aiSummary && (
-                <button onClick={() => generateAiSummary(false)} disabled={aiLoading || viewMode}
-                  title={viewMode ? 'This action is disabled while viewing as another user.' : undefined}
-                  className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition disabled:opacity-60">
-                  {aiLoading ? (
-                    <><span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span> Generating...</>
-                  ) : 'Generate AI Summary'}
-                </button>
-              )}
-              {aiSummary && !viewMode && (
-                <button onClick={() => generateAiSummary(true)} disabled={aiLoading} className="text-xs text-blue-600 hover:underline disabled:opacity-50">
-                  {aiLoading ? 'Regenerating…' : 'Regenerate'}
-                </button>
-              )}
-            </div>
-
-            {aiError && <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-3 text-sm">{aiError}</div>}
-
-            {aiLoading && (
-              <div className="flex flex-col items-center justify-center py-8 text-blue-600">
-                <div className="animate-spin w-8 h-8 border-3 border-blue-200 border-t-blue-600 rounded-full mb-3 border-[3px]"></div>
-                <p className="text-sm">Analysing your validation data...</p>
-              </div>
-            )}
-
-            {aiSummary && (() => {
-              const sections = parseAiSummary(aiSummary);
-              return (
-                <div className="grid md:grid-cols-2 gap-4">
-                  {sections.map(({ heading, body }) => {
-                    const meta = sectionMeta[heading] || { icon: '•', color: 'text-slate-700', bg: 'bg-slate-100' };
-                    return (
-                      <div key={heading} className={`bg-white rounded-lg p-5 border border-slate-200 ${heading === 'VERDICT' ? 'md:col-span-2' : ''}`}>
-                        <div className={`inline-flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded-full mb-3 ${meta.bg} ${meta.color}`}>
-                          <span>{meta.icon}</span>{heading === 'NEXT STEPS' ? 'WHAT SHOULD YOU DO NEXT?' : heading}
+                    <div key={c.key}>
+                      <div className="flex justify-between items-baseline mb-1.5 gap-2">
+                        <span className="text-sm text-slate-700">{c.label}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${TONE_DOM[st.tone].chip}`}>{st.label}</span>
+                          <span className="text-sm font-semibold text-slate-900 tabular-nums">{c.score.toFixed(1)}/50</span>
                         </div>
-                        {heading === 'VERDICT' && (
-                          <p className="text-base text-slate-800 leading-relaxed font-medium">{renderInlineMarkdown(body)}</p>
-                        )}
-                        {heading === 'NEXT STEPS' && (
-                          <ol className="space-y-2.5">
-                            {toSentences(body).map((sentence, i) => (
-                              <li key={i} className="flex gap-2.5 text-sm text-slate-700 leading-relaxed">
-                                <span className="shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
-                                <span>{renderInlineMarkdown(sentence)}</span>
-                              </li>
-                            ))}
-                          </ol>
-                        )}
-                        {(heading === "WHAT'S WORKING" || heading === 'WHAT NEEDS WORK') && (
-                          <ul className="space-y-2">
-                            {toSentences(body).map((sentence, i) => (
-                              <li key={i} className="flex gap-2 text-sm text-slate-700 leading-relaxed">
-                                <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${heading === "WHAT'S WORKING" ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                                <span>{renderInlineMarkdown(sentence)}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-2">
+                        <div className={`h-2 rounded-full ${TONE_DOM[st.tone].bar}`} style={{ width: `${Math.min(c.pct, 100)}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {matrixWithPct.length >= 3 && (
+                <div className="border-t border-slate-100 mt-6 pt-6">
+                  <RadarChart data={matrixWithPct.map(c => ({ label: c.short, value: c.pct }))} />
+                </div>
+              )}
+            </div>
+
+            {/* Why this score */}
+            <ScoreBreakdown aggregated={a} />
+
+            {/* Customer Validation */}
+            {a.customerValidation && (
+              <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
+                <h3 className="font-semibold text-slate-900 mb-6">Customer Validation</h3>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
+                  {[
+                    { label: 'Would Use It', val: a.customerValidation.wouldUse },
+                    { label: 'Would Pay', val: a.customerValidation.wouldPay },
+                    { label: 'Would Recommend', val: a.customerValidation.wouldRecommend },
+                    { label: 'Solves Real Problem', val: a.customerValidation.solvesRealProblem },
+                    { label: 'Better Than Alternatives', val: a.customerValidation.betterThanAlternatives },
+                  ].map(item => {
+                    const tone = TONE_DOM[pctTone(item.val)];
+                    return (
+                      <div key={item.label} className="text-center">
+                        <div className={`text-3xl md:text-4xl font-black tabular-nums ${tone.text}`}>{item.val.toFixed(0)}%</div>
+                        <div className="text-xs text-slate-500 mt-1.5 mb-2">{item.label}</div>
+                        <div className="w-full bg-slate-100 rounded-full h-1.5">
+                          <div className={`h-1.5 rounded-full ${tone.bar}`} style={{ width: `${Math.min(item.val, 100)}%` }} />
+                        </div>
                       </div>
                     );
                   })}
                 </div>
-              );
-            })()}
-
-            {!aiSummary && !aiLoading && !aiError && (
-              <p className="text-sm text-slate-500 text-center py-4">Click &quot;Generate AI Summary&quot; to get an instant analysis of your validation results.</p>
-            )}
-          </div>
-
-          {/* Feedback */}
-          {a.openFeedbacks?.length > 0 && (
-            <div id="feedback" className="scroll-mt-6 bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-8">
-              <h3 className="font-semibold text-slate-900 mb-1">Validator Feedback</h3>
-              <p className="text-xs text-slate-500 mb-4">Per-validator written feedback, with contact details shared on submission.</p>
-              <div className="space-y-4">
-                {a.openFeedbacks.map((fb: any, i: number) => (
-                  <div key={i} className="border border-slate-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between flex-wrap gap-2 mb-3 pb-3 border-b border-slate-100">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">{fb.validatorName}</p>
-                        {fb.validatorOccupation && <p className="text-xs text-slate-500">{fb.validatorOccupation}</p>}
-                      </div>
-                      <div className="flex items-center gap-3 text-xs">
-                        {fb.validatorEmail && <a href={`mailto:${fb.validatorEmail}`} className="text-blue-600 hover:underline">{fb.validatorEmail}</a>}
-                        {fb.validatorPhone && <a href={`tel:${fb.validatorPhone}`} className="text-blue-600 hover:underline">{fb.validatorPhone}</a>}
-                        {fb.validatorLinkedinUrl && <a href={fb.validatorLinkedinUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">LinkedIn</a>}
-                      </div>
-                    </div>
-                    <div className="grid md:grid-cols-3 gap-4">
-                      <div>
-                        <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600 mb-1"><span>▲</span>Biggest Strength</div>
-                        <p className="text-sm text-slate-700 leading-relaxed">{fb.strength}</p>
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5 text-xs font-semibold text-red-600 mb-1"><span>▼</span>Biggest Weakness</div>
-                        <p className="text-sm text-slate-700 leading-relaxed">{fb.weakness}</p>
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 mb-1"><span>→</span>Suggested Improvement</div>
-                        <p className="text-sm text-slate-700 leading-relaxed">{fb.improvement}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
               </div>
+            )}
+
+            {/* Risk Assessment */}
+            {a.riskSummary && Object.keys(a.riskSummary).length > 0 && (
+              <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
+                <h3 className="font-semibold text-slate-900 mb-4">Risk Assessment</h3>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                  {Object.entries(a.riskSummary).map(([risk, counts]: any) => {
+                    const level = dominantRisk(counts);
+                    const tone = TONE_DOM[riskTone(level)];
+                    return (
+                      <div key={risk} className={`border rounded-lg p-4 ${tone.chip} ${tone.border}`}>
+                        <p className="text-xs font-medium opacity-70 mb-2">{RISK_LABELS[risk] || risk}</p>
+                        <p className="text-sm font-bold">{RISK_LABEL[level]}</p>
+                        <p className="text-[11px] mt-2 opacity-70">{counts.LOW || 0} low · {counts.MEDIUM || 0} med · {counts.HIGH || 0} high</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </>
+        )
+      )}
+
+      {/* ---------- Surveys ---------- */}
+      {tab === 'surveys' && surveysBlock}
+
+      {/* ---------- Insights ---------- */}
+      {tab === 'insights' && (
+        <>
+          {gapFinding ? (
+            <ValidationGapCard finding={gapFinding} ideaId={idea?.id} />
+          ) : (
+            <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
+              <h3 className="font-semibold text-slate-900 mb-1">Validation Weakness Detector</h3>
+              <p className="text-sm text-slate-500">
+                {expertDone
+                  ? 'No standout weakness detected across your evidence right now. This re-checks automatically as new validations and survey responses arrive.'
+                  : 'Once expert reviews and survey responses start arriving, this section pinpoints the weakest part of your validation story and can generate a targeted survey to fix it.'}
+              </p>
             </div>
           )}
-
-          {/* Interested Contacts */}
-          {a.interestedContacts?.length > 0 && (
-            <div id="people" className="scroll-mt-6 bg-white border border-slate-200 shadow-sm rounded-xl p-6">
-              <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-                <div>
-                  <h3 className="font-semibold text-slate-900">People Who Want to Help</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">{a.interestedContacts.length} validator{a.interestedContacts.length !== 1 ? 's' : ''} open to being contacted</p>
-                </div>
-                <button onClick={downloadContacts}
-                  className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
-                  </svg>
-                  Download Full Report
-                </button>
-              </div>
-              <div className="grid sm:grid-cols-2 gap-3">
-                {a.interestedContacts.map((contact: any, i: number) => (
-                  <div key={i} className="border border-slate-200 rounded-lg p-4">
-                    <p className="font-medium text-slate-900">{contact.name}</p>
-                    {contact.occupation && <p className="text-sm text-slate-500">{contact.occupation}</p>}
-                    <a href={`mailto:${contact.email}`} className="text-sm text-blue-600 hover:underline break-all">{contact.email}</a>
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {(Array.isArray(contact.contactPreferences) ? contact.contactPreferences : []).map((p: string) => (
-                        <span key={p} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{p.replace('_', ' ')}</span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {idea && (
+            <AssumptionCheckCard
+              ideaId={idea.id}
+              assumptions={assumptionList}
+              aggregated={a}
+              surveyAnalytics={surveyAnalytics}
+              gapKey={gapFinding?.key}
+              readOnly={viewMode}
+              onSaved={setAssumptionList}
+            />
           )}
         </>
+      )}
+
+      {/* ---------- Experts & Feedback ---------- */}
+      {tab === 'experts' && (
+        !expertDone ? (
+          <EmptyState
+            icon="💬"
+            title="No expert feedback yet"
+            body="Each expert leaves written feedback — biggest strength, biggest weakness, and a suggested improvement — along with their contact details. It all appears here."
+          />
+        ) : (
+          <>
+            {/* Feedback */}
+            {a.openFeedbacks?.length > 0 && (
+              <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
+                <h3 className="font-semibold text-slate-900 mb-1">Validator Feedback</h3>
+                <p className="text-xs text-slate-500 mb-4">Per-validator written feedback, with contact details shared on submission.</p>
+                <div className="space-y-4">
+                  {a.openFeedbacks.map((fb: any, i: number) => (
+                    <div key={i} className="border border-slate-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between flex-wrap gap-2 mb-3 pb-3 border-b border-slate-100">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{fb.validatorName}</p>
+                          {fb.validatorOccupation && <p className="text-xs text-slate-500">{fb.validatorOccupation}</p>}
+                        </div>
+                        <div className="flex items-center gap-3 text-xs flex-wrap">
+                          {fb.validatorEmail && <a href={`mailto:${fb.validatorEmail}`} className="text-blue-600 hover:underline">{fb.validatorEmail}</a>}
+                          {fb.validatorPhone && <a href={`tel:${fb.validatorPhone}`} className="text-blue-600 hover:underline">{fb.validatorPhone}</a>}
+                          {fb.validatorLinkedinUrl && <a href={fb.validatorLinkedinUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">LinkedIn</a>}
+                        </div>
+                      </div>
+                      <div className="grid md:grid-cols-3 gap-4">
+                        <div>
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600 mb-1"><span>▲</span>Biggest Strength</div>
+                          <p className="text-sm text-slate-700 leading-relaxed">{fb.strength}</p>
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-red-600 mb-1"><span>▼</span>Biggest Weakness</div>
+                          <p className="text-sm text-slate-700 leading-relaxed">{fb.weakness}</p>
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 mb-1"><span>→</span>Suggested Improvement</div>
+                          <p className="text-sm text-slate-700 leading-relaxed">{fb.improvement}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Interested Contacts */}
+            {a.interestedContacts?.length > 0 && (
+              <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6">
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+                  <div>
+                    <h3 className="font-semibold text-slate-900">People Who Want to Help</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">{a.interestedContacts.length} validator{a.interestedContacts.length !== 1 ? 's' : ''} open to being contacted</p>
+                  </div>
+                  <button onClick={downloadContacts}
+                    className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold hover:border-blue-300 hover:text-blue-700 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                    </svg>
+                    Download Excel Report
+                  </button>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {a.interestedContacts.map((contact: any, i: number) => (
+                    <div key={i} className="border border-slate-200 rounded-lg p-4">
+                      <p className="font-medium text-slate-900">{contact.name}</p>
+                      {contact.occupation && <p className="text-sm text-slate-500">{contact.occupation}</p>}
+                      <a href={`mailto:${contact.email}`} className="text-sm text-blue-600 hover:underline break-all">{contact.email}</a>
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {(Array.isArray(contact.contactPreferences) ? contact.contactPreferences : []).map((p: string) => (
+                          <span key={p} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{p.replace('_', ' ')}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {a.openFeedbacks?.length === 0 && a.interestedContacts?.length === 0 && (
+              <EmptyState
+                compact
+                title="No written feedback yet"
+                body="Experts have scored your idea, but none have left written feedback or opted into contact so far."
+              />
+            )}
+          </>
+        )
       )}
 
       {shareOpen && share && idea && (

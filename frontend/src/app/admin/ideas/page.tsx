@@ -4,9 +4,12 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { getRealUser } from '@/lib/auth';
+import { useToast, useConfirm } from '@/components/ui/feedback';
 
 export default function AdminIdeasPage() {
   const router = useRouter();
+  const toast = useToast();
+  const confirmDialog = useConfirm();
   const [ideas, setIdeas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -18,12 +21,19 @@ export default function AdminIdeasPage() {
   }, []);
 
   const deleteIdea = async (id: string, title: string) => {
-    if (!confirm(`Delete idea "${title}"? This cannot be undone.`)) return;
+    const ok = await confirmDialog({
+      title: `Delete "${title}"?`,
+      body: 'The idea and its validations are removed permanently. This cannot be undone.',
+      confirmLabel: 'Delete Idea',
+      danger: true,
+    });
+    if (!ok) return;
     setActionLoading(id);
     try {
       await api.deleteIdea(id);
       setIdeas(i => i.filter(x => x.id !== id));
-    } catch (err: any) { alert(err.message); }
+      toast.success('Idea deleted.');
+    } catch (err: any) { toast.error(err.message); }
     finally { setActionLoading(null); }
   };
 

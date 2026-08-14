@@ -34,7 +34,7 @@ export default function IdeaValidatorLanding() {
           <CameraRig reducedMotion={reducedMotion} isMobile={isMobile} />
           <LightingRig />
           <IdeaBulb reducedMotion={reducedMotion} />
-          <OrbitNodes />
+          <OrbitNodes isMobile={isMobile} />
           <ParticleField count={particleCount} animate={!reducedMotion} />
         </Canvas>
       </div>

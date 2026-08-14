@@ -4,18 +4,37 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { getStoredUser } from '@/lib/auth';
+import PageHeader from '@/components/ui/PageHeader';
+import EmptyState from '@/components/ui/EmptyState';
+import StatusBadge, { type BadgeTone } from '@/components/ui/StatusBadge';
+import { SkeletonList } from '@/components/ui/Skeleton';
+
+// One derived, human status per idea — the 2-second read the card leads with.
+function ideaState(idea: any): { label: string; tone: BadgeTone } {
+  if (idea.paymentStatus !== 'COMPLETED') return { label: 'Payment pending', tone: 'warning' };
+  const validations = idea._count?.validations ?? 0;
+  if (validations === 0) return { label: 'Awaiting experts', tone: 'info' };
+  return { label: `${validations} expert validation${validations !== 1 ? 's' : ''}`, tone: 'success' };
+}
+
+const STAGE_LABEL: Record<string, string> = {
+  IDEA: 'Idea',
+  RESEARCH: 'Research',
+  PROTOTYPE: 'Prototype',
+  MVP: 'MVP',
+  REVENUE_GENERATING: 'Revenue generating',
+};
 
 export default function FounderIdeasPage() {
   const router = useRouter();
-  const [ideas, setIdeas] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [ideas, setIdeas] = useState<any[] | null>(null);
   const [creatingSurveyFor, setCreatingSurveyFor] = useState<string | null>(null);
 
   useEffect(() => {
     const user = getStoredUser();
     if (!user || user.role !== 'FOUNDER') { router.push('/auth/login'); return; }
-    api.getMyIdeas().then(setIdeas).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+    api.getMyIdeas().then(setIdeas).catch(() => setIdeas([]));
+  }, [router]);
 
   const createMassSurvey = async (idea: any) => {
     setCreatingSurveyFor(idea.id);
@@ -27,88 +46,82 @@ export default function FounderIdeasPage() {
     }
   };
 
-  const stageColor: Record<string, string> = {
-    IDEA: 'bg-slate-100 text-slate-700',
-    RESEARCH: 'bg-blue-50 text-blue-700',
-    PROTOTYPE: 'bg-amber-50 text-amber-700',
-    MVP: 'bg-orange-50 text-orange-700',
-    REVENUE_GENERATING: 'bg-emerald-50 text-emerald-700',
-  };
-
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">My Ideas</h1>
-          <p className="text-slate-500 mt-1">Track all your submitted business ideas</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link href="/founder/surveys"
-            className="bg-white border border-slate-200 text-slate-700 px-5 py-2.5 rounded-lg font-semibold hover:border-slate-300 transition">
-            My Surveys
-          </Link>
-          <Link href="/founder/submit-idea"
-            className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-blue-700 transition">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+      <PageHeader
+        title="My Ideas"
+        subtitle="Expert validation for each idea you've submitted"
+        actions={
+          <Link href="/founder/submit-idea" className="bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition">
             + Submit New Idea
           </Link>
-        </div>
-      </div>
+        }
+      />
 
-      {loading && <div className="text-center py-20 text-slate-500">Loading...</div>}
+      {ideas === null && <SkeletonList />}
 
-      {!loading && ideas.length === 0 && (
-        <div className="text-center py-20">
-          <div className="text-5xl mb-4">💡</div>
-          <h2 className="text-xl font-semibold text-slate-800 mb-2">No ideas yet</h2>
-          <p className="text-slate-500 mb-6">Submit your first business idea to start getting feedback.</p>
-          <Link href="/founder/submit-idea" className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-semibold">Submit Your First Idea</Link>
-        </div>
+      {ideas !== null && ideas.length === 0 && (
+        <EmptyState
+          icon="💡"
+          title="No ideas yet"
+          body="Submit your first idea to get structured feedback from industry experts across 12 frameworks — before you invest serious time or money."
+          action={
+            <Link href="/founder/submit-idea" className="inline-block bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition">
+              Submit Your First Idea
+            </Link>
+          }
+        />
       )}
 
       <div className="space-y-4">
-        {ideas.map(idea => {
+        {(ideas ?? []).map((idea) => {
           const isPaid = idea.paymentStatus === 'COMPLETED';
+          const state = ideaState(idea);
 
           return (
-            <div key={idea.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h3 className="text-lg font-semibold text-slate-900">{idea.title}</h3>
-                    {idea.isRevision && <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">v{idea.version}</span>}
+            <div key={idea.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 sm:p-6 hover:border-slate-300 transition">
+              <div className="flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <h3 className="text-base sm:text-lg font-semibold text-slate-900">{idea.title}</h3>
+                    {idea.isRevision && <StatusBadge tone="accent">v{idea.version}</StatusBadge>}
+                    <StatusBadge tone={state.tone} dot>{state.label}</StatusBadge>
                   </div>
-                  <div className="flex items-center gap-2 mb-3 flex-wrap">
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${stageColor[idea.stage] || 'bg-slate-100 text-slate-700'}`}>{idea.stage.replace('_', ' ')}</span>
-                    <span className="text-xs text-slate-500">{idea.industryCategory}</span>
-                    <span className={`text-xs px-2 py-1 rounded-full ${isPaid ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                      {isPaid ? 'Active' : 'Payment Pending'}
-                    </span>
-                  </div>
-                  <p className="text-sm text-slate-600 line-clamp-2">{idea.problemStatement}</p>
-                  <div className="mt-3 flex items-center gap-4 text-xs text-slate-500">
-                    <span>{idea._count.validations} validation{idea._count.validations !== 1 ? 's' : ''}</span>
+
+                  <p className="text-sm text-slate-600 line-clamp-2 mb-3">{idea.problemStatement}</p>
+
+                  <div className="flex items-center gap-x-3 gap-y-1 text-xs text-slate-500 flex-wrap">
+                    <span>{STAGE_LABEL[idea.stage] || idea.stage}</span>
+                    <span className="text-slate-300">·</span>
+                    <span>{idea.industryCategory}</span>
+                    <span className="text-slate-300">·</span>
                     <span>Submitted {new Date(idea.submittedAt).toLocaleDateString()}</span>
                   </div>
                 </div>
-                <div className="ml-4 flex flex-col gap-2">
-                  {!isPaid && (
-                    <Link href={`/founder/submit-idea?pay=${idea.id}`}
-                      className="text-sm bg-yellow-500 text-white px-3 py-1.5 rounded-lg hover:bg-yellow-600 text-center">
-                      Complete Payment
+
+                {/* One primary action per card; the survey shortcut stays secondary. */}
+                <div className="flex sm:flex-col gap-2 w-full sm:w-auto shrink-0">
+                  {isPaid ? (
+                    <Link
+                      href={`/founder/ideas/${idea.id}/dashboard`}
+                      className="flex-1 sm:flex-none text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-center font-semibold transition"
+                    >
+                      Open Dashboard
                     </Link>
-                  )}
-                  {isPaid && (
-                    <Link href={`/founder/ideas/${idea.id}/dashboard`}
-                      className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 text-center">
-                      Expert Validation
+                  ) : (
+                    <Link
+                      href={`/founder/submit-idea?pay=${idea.id}`}
+                      className="flex-1 sm:flex-none text-sm bg-amber-500 text-white px-4 py-2 rounded-lg hover:bg-amber-600 text-center font-semibold transition"
+                    >
+                      Complete Payment
                     </Link>
                   )}
                   <button
                     onClick={() => createMassSurvey(idea)}
                     disabled={creatingSurveyFor === idea.id}
-                    className="text-sm bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg hover:border-blue-300 hover:text-blue-700 text-center disabled:opacity-60"
+                    className="flex-1 sm:flex-none text-sm bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:border-blue-300 hover:text-blue-700 text-center disabled:opacity-60 transition"
                   >
-                    {creatingSurveyFor === idea.id ? 'Creating...' : 'Create Mass Survey'}
+                    {creatingSurveyFor === idea.id ? 'Creating…' : 'Create Survey'}
                   </button>
                 </div>
               </div>

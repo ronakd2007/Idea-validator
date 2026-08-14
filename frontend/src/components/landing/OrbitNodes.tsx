@@ -75,7 +75,7 @@ function applyShard(
   }
 }
 
-function ComponentNode({ index }: { index: number }) {
+function ComponentNode({ index, isMobile }: { index: number; isMobile: boolean }) {
   const refs = useShardRefs();
   const total = IDEA_COMPONENTS.length;
 
@@ -113,11 +113,17 @@ function ComponentNode({ index }: { index: number }) {
       <mesh ref={refs.shard}>
         <octahedronGeometry args={[1, 0]} />
         <meshStandardMaterial ref={refs.mat} transparent opacity={0} roughness={0.35} metalness={0.15} />
-        <Html center distanceFactor={9} style={{ pointerEvents: 'none' }}>
-          <div ref={refs.labelEl} style={{ opacity: 0 }} className="bg-white/85 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide text-slate-700 uppercase whitespace-nowrap transition-opacity">
-            {IDEA_COMPONENTS[index]}
-          </div>
-        </Html>
+        {/* World-space labels are tuned for a wide desktop viewport — on a
+            narrow phone screen the same positions project into the headline
+            column and sit on top of it. Below md, the shard + connector line
+            still read as a live ring; only the DOM label caption drops. */}
+        {!isMobile && (
+          <Html center distanceFactor={9} style={{ pointerEvents: 'none' }}>
+            <div ref={refs.labelEl} style={{ opacity: 0 }} className="bg-white/85 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide text-slate-700 uppercase whitespace-nowrap transition-opacity">
+              {IDEA_COMPONENTS[index]}
+            </div>
+          </Html>
+        )}
       </mesh>
       <primitive object={refs.connector} />
     </group>
@@ -128,7 +134,7 @@ const EXPERT_INACTIVE = new THREE.Color('#64748b');
 const EXPERT_ACTIVE = new THREE.Color('#3b82f6');
 const expertColorTmp = new THREE.Color();
 
-function ExpertNode({ index }: { index: number }) {
+function ExpertNode({ index, isMobile }: { index: number; isMobile: boolean }) {
   const refs = useShardRefs();
   const total = EXPERTS.length;
 
@@ -156,11 +162,13 @@ function ExpertNode({ index }: { index: number }) {
       <mesh ref={refs.shard}>
         <tetrahedronGeometry args={[1, 0]} />
         <meshStandardMaterial ref={refs.mat} transparent opacity={0} roughness={0.3} metalness={0.2} />
-        <Html center distanceFactor={9} style={{ pointerEvents: 'none' }}>
-          <div ref={refs.labelEl} style={{ opacity: 0 }} className="bg-white/85 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide text-blue-700 uppercase whitespace-nowrap transition-opacity">
-            {EXPERTS[index]}
-          </div>
-        </Html>
+        {!isMobile && (
+          <Html center distanceFactor={9} style={{ pointerEvents: 'none' }}>
+            <div ref={refs.labelEl} style={{ opacity: 0 }} className="bg-white/85 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide text-blue-700 uppercase whitespace-nowrap transition-opacity">
+              {EXPERTS[index]}
+            </div>
+          </Html>
+        )}
       </mesh>
       <primitive object={refs.connector} />
     </group>
@@ -182,7 +190,7 @@ const HEALTHY_COLOR = new THREE.Color('#3b82f6');
 const WEAK_COLOR = new THREE.Color('#f59e0b');
 const tmpColor = new THREE.Color();
 
-function FrameworkNode({ index }: { index: number }) {
+function FrameworkNode({ index, isMobile }: { index: number; isMobile: boolean }) {
   const refs = useShardRefs();
   const scoreEl = useRef<HTMLSpanElement>(null);
   const pulse = useRef<THREE.Mesh>(null);
@@ -276,15 +284,18 @@ function FrameworkNode({ index }: { index: number }) {
         <icosahedronGeometry args={[1, 0]} />
         <meshStandardMaterial ref={refs.mat} transparent opacity={0} roughness={0.25} metalness={0.25} />
         {/* distanceFactor 7 (was 9) — these labels rendered large enough to
-            reach into the headline column even after the ring was tightened */}
-        <Html center distanceFactor={7} style={{ pointerEvents: 'none' }}>
-          <div ref={refs.labelEl} style={{ opacity: 0 }} className="bg-white/85 px-2 py-1 rounded-md text-center transition-opacity">
-            <div className="text-[10px] font-semibold tracking-wide text-slate-800 uppercase whitespace-nowrap">{fw.name}</div>
-            <span ref={scoreEl} className="text-[9px] text-slate-500">
-              {fw.score}/100
-            </span>
-          </div>
-        </Html>
+            reach into the headline column even after the ring was tightened.
+            Below md they're dropped entirely — see the isMobile note above. */}
+        {!isMobile && (
+          <Html center distanceFactor={7} style={{ pointerEvents: 'none' }}>
+            <div ref={refs.labelEl} style={{ opacity: 0 }} className="bg-white/85 px-2 py-1 rounded-md text-center transition-opacity">
+              <div className="text-[10px] font-semibold tracking-wide text-slate-800 uppercase whitespace-nowrap">{fw.name}</div>
+              <span ref={scoreEl} className="text-[9px] text-slate-500">
+                {fw.score}/100
+              </span>
+            </div>
+          </Html>
+        )}
       </mesh>
       <primitive object={refs.connector} />
       <mesh ref={pulse} visible={false}>
@@ -323,17 +334,17 @@ function ScanRing() {
   );
 }
 
-export default function OrbitNodes() {
+export default function OrbitNodes({ isMobile = false }: { isMobile?: boolean }) {
   return (
     <>
       {IDEA_COMPONENTS.map((_, i) => (
-        <ComponentNode key={`c${i}`} index={i} />
+        <ComponentNode key={`c${i}`} index={i} isMobile={isMobile} />
       ))}
       {EXPERTS.map((_, i) => (
-        <ExpertNode key={`e${i}`} index={i} />
+        <ExpertNode key={`e${i}`} index={i} isMobile={isMobile} />
       ))}
       {FRAMEWORKS.map((_, i) => (
-        <FrameworkNode key={`f${i}`} index={i} />
+        <FrameworkNode key={`f${i}`} index={i} isMobile={isMobile} />
       ))}
       <ScanRing />
     </>

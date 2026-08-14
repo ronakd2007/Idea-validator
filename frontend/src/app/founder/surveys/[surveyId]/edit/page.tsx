@@ -6,8 +6,10 @@ import { api } from '@/lib/api';
 import { getStoredUser } from '@/lib/auth';
 import { QUESTION_TYPES, QuestionType, SurveyDraft, IncentiveDraft, SurveyVersion, createQuestion, duplicateQuestion, surveyFromServer } from '@/lib/surveyTypes';
 import QuestionEditor from '@/components/survey/QuestionEditor';
+import QuestionInspector from '@/components/survey/QuestionInspector';
 import QuestionPreview from '@/components/survey/QuestionPreview';
 import SurveyQrModal from '@/components/survey/SurveyQrModal';
+import { useToast, useConfirm } from '@/components/ui/feedback';
 
 const BLANK_INCENTIVE: IncentiveDraft = { title: '', description: '', numberOfWinners: 1, eligibility: '', closingDate: null, collectContact: true };
 
@@ -26,6 +28,8 @@ function SurveyBuilderInner() {
   const params = useParams();
   const searchParams = useSearchParams();
   const surveyId = params.surveyId as string;
+  const toast = useToast();
+  const confirm = useConfirm();
 
   const [survey, setSurvey] = useState<SurveyDraft | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,6 +52,10 @@ function SurveyBuilderInner() {
   const [incentiveError, setIncentiveError] = useState('');
   const [incentiveSavedAt, setIncentiveSavedAt] = useState<number | null>(null);
   const [showIncentive, setShowIncentive] = useState(false);
+  // 3-pane builder: which question the canvas + inspector focus on.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [navAddOpen, setNavAddOpen] = useState(false);
+  const navAddRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const user = getStoredUser();
@@ -58,6 +66,7 @@ function SurveyBuilderInner() {
         setSurvey(s);
         setIncentiveForm(s.incentive || BLANK_INCENTIVE);
         setShowIncentive(!!s.incentive);
+        setSelectedId(s.questions[0]?.id ?? null);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -67,6 +76,7 @@ function SurveyBuilderInner() {
   useEffect(() => {
     const onClickOutside = (e: MouseEvent) => {
       if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) setAddMenuOpen(false);
+      if (navAddRef.current && !navAddRef.current.contains(e.target as Node)) setNavAddOpen(false);
     };
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
@@ -80,8 +90,18 @@ function SurveyBuilderInner() {
   };
 
   const addQuestion = (type: QuestionType) => {
-    setSurvey({ ...survey, questions: [...survey.questions, createQuestion(type)] });
+    const nq = createQuestion(type);
+    setSurvey({ ...survey, questions: [...survey.questions, nq] });
     setAddMenuOpen(false);
+    setNavAddOpen(false);
+    setSelectedId(nq.id);
+    // scroll after the card mounts
+    setTimeout(() => document.getElementById(`qcard-${nq.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60);
+  };
+
+  const selectQuestion = (id: string) => {
+    setSelectedId(id);
+    document.getElementById(`qcard-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const moveQuestion = (index: number, dir: -1 | 1) => {
@@ -99,7 +119,10 @@ function SurveyBuilderInner() {
   };
 
   const deleteAt = (index: number) => {
-    setSurvey({ ...survey, questions: survey.questions.filter((_, i) => i !== index) });
+    const removed = survey.questions[index];
+    const remaining = survey.questions.filter((_, i) => i !== index);
+    setSurvey({ ...survey, questions: remaining });
+    if (removed?.id === selectedId) setSelectedId(remaining[Math.min(index, remaining.length - 1)]?.id ?? null);
   };
 
   // Shared by Save Draft and Publish — Publish must never validate against
@@ -151,6 +174,7 @@ function SurveyBuilderInner() {
       await saveSurvey();
       const res = await api.publishSurvey(survey.id);
       setSurvey(surveyFromServer(res));
+      toast.success('Survey is live — share the public link to start collecting responses.');
     } catch (err: any) {
       setSaveError(err.message);
     } finally {
@@ -159,14 +183,22 @@ function SurveyBuilderInner() {
   };
 
   const closeSurvey = async () => {
-    if (!window.confirm('Close this survey?\n\nRespondents will no longer be able to submit responses.')) return;
+    const ok = await confirm({
+      title: 'Close this survey?',
+      body: 'Respondents will no longer be able to submit responses. You can reopen it later.',
+      confirmLabel: 'Close Survey',
+      danger: true,
+    });
+    if (!ok) return;
     setStatusActionLoading(true);
     setSaveError('');
     try {
       const res = await api.closeSurvey(survey.id);
       setSurvey(surveyFromServer(res));
+      toast.success('Survey closed — it no longer accepts responses.');
     } catch (err: any) {
       setSaveError(err.message);
+      toast.error(err.message || 'Could not close the survey.');
     } finally {
       setStatusActionLoading(false);
     }
@@ -178,8 +210,10 @@ function SurveyBuilderInner() {
     try {
       const res = await api.reopenSurvey(survey.id);
       setSurvey(surveyFromServer(res));
+      toast.success('Survey reopened — it accepts responses again.');
     } catch (err: any) {
       setSaveError(err.message);
+      toast.error(err.message || 'Could not reopen the survey.');
     } finally {
       setStatusActionLoading(false);
     }
@@ -237,9 +271,64 @@ function SurveyBuilderInner() {
     }
   };
 
+  const isThreePane = survey.status === 'DRAFT' && mode === 'build';
+  const selectedIndex = survey.questions.findIndex((q) => q.id === selectedId);
+  const selectedQ = selectedIndex >= 0 ? survey.questions[selectedIndex] : null;
+
+  // Rendered above the content in read-only/preview, but inside the canvas
+  // column in the 3-pane builder.
+  const incentiveCard = (
+    <div id="builder-incentive" className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-6 scroll-mt-24">
+      <button onClick={() => setShowIncentive((v) => !v)} className="w-full flex items-center justify-between text-left">
+        <div>
+          <h3 className="font-semibold text-slate-900">Respondent Incentive <span className="text-xs font-normal text-slate-400">(optional)</span></h3>
+          <p className="text-xs text-slate-500 mt-0.5">{survey.incentive ? `${survey.incentive.title} — ${survey.incentive.numberOfWinners} winner${survey.incentive.numberOfWinners !== 1 ? 's' : ''}` : 'No incentive configured'}</p>
+        </div>
+        <span className="text-xs text-slate-400">{showIncentive ? '▲' : '▼'}</span>
+      </button>
+      {showIncentive && (
+        <div className="mt-4 pt-4 border-t border-slate-100 space-y-3">
+          <input type="text" value={incentiveForm.title} onChange={(e) => setIncentiveForm({ ...incentiveForm, title: e.target.value })}
+            placeholder="Incentive title (e.g. ₹500 Amazon Gift Card)" className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm" />
+          <textarea value={incentiveForm.description} onChange={(e) => setIncentiveForm({ ...incentiveForm, description: e.target.value })}
+            placeholder="Description (optional)" rows={2} className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm resize-none" />
+          <div className="grid sm:grid-cols-2 gap-3">
+            <label className="text-sm text-slate-600">
+              Number of winners
+              <input type="number" min={1} value={incentiveForm.numberOfWinners}
+                onChange={(e) => setIncentiveForm({ ...incentiveForm, numberOfWinners: Math.max(1, Number(e.target.value) || 1) })}
+                className="w-full mt-1 border border-slate-200 rounded-md px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm text-slate-600">
+              Survey closes (optional)
+              <input type="date" value={incentiveForm.closingDate || ''} onChange={(e) => setIncentiveForm({ ...incentiveForm, closingDate: e.target.value || null })}
+                className="w-full mt-1 border border-slate-200 rounded-md px-3 py-2 text-sm" />
+            </label>
+          </div>
+          <input type="text" value={incentiveForm.eligibility} onChange={(e) => setIncentiveForm({ ...incentiveForm, eligibility: e.target.value })}
+            placeholder="Eligibility (optional, e.g. must be 18+)" className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm" />
+          <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+            <input type="checkbox" checked={incentiveForm.collectContact} onChange={(e) => setIncentiveForm({ ...incentiveForm, collectContact: e.target.checked })} className="accent-blue-600 w-4 h-4" />
+            Collect contact info for winners (shown as a separate, optional step — never linked to their survey answers)
+          </label>
+          {incentiveError && <p className="text-xs text-red-600">{incentiveError}</p>}
+          <div className="flex items-center gap-3">
+            <button onClick={saveIncentive} disabled={incentiveSaving || !incentiveForm.title.trim()} className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-60">
+              {incentiveSaving ? 'Saving...' : 'Save Incentive'}
+            </button>
+            {survey.incentive && (
+              <button onClick={removeIncentive} disabled={incentiveSaving} className="text-sm text-red-600 hover:text-red-700">Remove Incentive</button>
+            )}
+            {incentiveSavedAt && !incentiveSaving && <span className="text-xs text-emerald-600">Saved</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-      <div className="flex items-center justify-between flex-wrap gap-3 mb-6 pb-4 border-b border-slate-200">
+    <div className={`${isThreePane ? 'max-w-[1400px]' : 'max-w-3xl'} mx-auto px-4 sm:px-6 py-8`}>
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-6 pb-4 border-b border-slate-200 md:sticky md:top-0 z-20 bg-[#f8fafc] viewas-sticky-offset">
         <Link
           href={survey.ideaId ? `/founder/ideas/${survey.ideaId}/dashboard` : '/founder/surveys'}
           className="text-sm text-slate-500 hover:text-slate-800"
@@ -382,52 +471,7 @@ function SurveyBuilderInner() {
         <SurveyQrModal url={publicUrl} title={survey.title || 'Survey'} onClose={() => setShowQr(false)} />
       )}
 
-      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-6">
-        <button onClick={() => setShowIncentive((v) => !v)} className="w-full flex items-center justify-between text-left">
-          <div>
-            <h3 className="font-semibold text-slate-900">Respondent Incentive <span className="text-xs font-normal text-slate-400">(optional)</span></h3>
-            <p className="text-xs text-slate-500 mt-0.5">{survey.incentive ? `${survey.incentive.title} — ${survey.incentive.numberOfWinners} winner${survey.incentive.numberOfWinners !== 1 ? 's' : ''}` : 'No incentive configured'}</p>
-          </div>
-          <span className="text-xs text-slate-400">{showIncentive ? '▲' : '▼'}</span>
-        </button>
-        {showIncentive && (
-          <div className="mt-4 pt-4 border-t border-slate-100 space-y-3">
-            <input type="text" value={incentiveForm.title} onChange={(e) => setIncentiveForm({ ...incentiveForm, title: e.target.value })}
-              placeholder="Incentive title (e.g. ₹500 Amazon Gift Card)" className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm" />
-            <textarea value={incentiveForm.description} onChange={(e) => setIncentiveForm({ ...incentiveForm, description: e.target.value })}
-              placeholder="Description (optional)" rows={2} className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm resize-none" />
-            <div className="grid sm:grid-cols-2 gap-3">
-              <label className="text-sm text-slate-600">
-                Number of winners
-                <input type="number" min={1} value={incentiveForm.numberOfWinners}
-                  onChange={(e) => setIncentiveForm({ ...incentiveForm, numberOfWinners: Math.max(1, Number(e.target.value) || 1) })}
-                  className="w-full mt-1 border border-slate-200 rounded-md px-3 py-2 text-sm" />
-              </label>
-              <label className="text-sm text-slate-600">
-                Survey closes (optional)
-                <input type="date" value={incentiveForm.closingDate || ''} onChange={(e) => setIncentiveForm({ ...incentiveForm, closingDate: e.target.value || null })}
-                  className="w-full mt-1 border border-slate-200 rounded-md px-3 py-2 text-sm" />
-              </label>
-            </div>
-            <input type="text" value={incentiveForm.eligibility} onChange={(e) => setIncentiveForm({ ...incentiveForm, eligibility: e.target.value })}
-              placeholder="Eligibility (optional, e.g. must be 18+)" className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm" />
-            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
-              <input type="checkbox" checked={incentiveForm.collectContact} onChange={(e) => setIncentiveForm({ ...incentiveForm, collectContact: e.target.checked })} className="accent-blue-600 w-4 h-4" />
-              Collect contact info for winners (shown as a separate, optional step — never linked to their survey answers)
-            </label>
-            {incentiveError && <p className="text-xs text-red-600">{incentiveError}</p>}
-            <div className="flex items-center gap-3">
-              <button onClick={saveIncentive} disabled={incentiveSaving || !incentiveForm.title.trim()} className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-60">
-                {incentiveSaving ? 'Saving...' : 'Save Incentive'}
-              </button>
-              {survey.incentive && (
-                <button onClick={removeIncentive} disabled={incentiveSaving} className="text-sm text-red-600 hover:text-red-700">Remove Incentive</button>
-              )}
-              {incentiveSavedAt && !incentiveSaving && <span className="text-xs text-emerald-600">Saved</span>}
-            </div>
-          </div>
-        )}
-      </div>
+      {!isThreePane && incentiveCard}
 
       {survey.status !== 'DRAFT' ? (
         <>
@@ -447,8 +491,57 @@ function SurveyBuilderInner() {
           </p>
         </>
       ) : mode === 'build' ? (
-        <>
-          <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-6">
+        <div className="lg:grid lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_290px] lg:gap-6 lg:items-start">
+          {/* Left: block navigation — jump between settings and questions. */}
+          <aside className="hidden lg:block lg:sticky lg:top-24 max-h-[calc(100vh-7rem)] overflow-y-auto">
+            <nav className="space-y-0.5 pr-1">
+              <button type="button" onClick={() => document.getElementById('builder-settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="w-full text-left px-2.5 py-1.5 rounded-md text-sm text-slate-600 hover:bg-slate-100 transition">
+                Survey details
+              </button>
+              <button type="button" onClick={() => document.getElementById('builder-incentive')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="w-full text-left px-2.5 py-1.5 rounded-md text-sm text-slate-600 hover:bg-slate-100 transition">
+                Incentive
+              </button>
+              <p className="pt-4 pb-1 px-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
+                Questions ({survey.questions.length})
+              </p>
+              {survey.questions.map((q, i) => (
+                <button
+                  key={q.id}
+                  type="button"
+                  onClick={() => selectQuestion(q.id)}
+                  title={q.questionText || 'Untitled question'}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-md text-sm flex items-center gap-2 transition ${
+                    q.id === selectedId ? 'bg-blue-50 text-blue-700 font-medium' : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className={`shrink-0 w-5 h-5 rounded text-[11px] flex items-center justify-center tabular-nums ${q.id === selectedId ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{i + 1}</span>
+                  <span className="truncate">{q.questionText || 'Untitled question'}</span>
+                </button>
+              ))}
+              <div ref={navAddRef} className="relative pt-2">
+                <button type="button" onClick={() => setNavAddOpen((v) => !v)}
+                  className="w-full border border-dashed border-slate-300 text-slate-600 hover:border-blue-400 hover:text-blue-600 px-2.5 py-2 rounded-lg text-sm font-medium transition">
+                  + Add Question
+                </button>
+                {navAddOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg py-2 z-30 max-h-80 overflow-y-auto">
+                    {QUESTION_TYPES.map((t) => (
+                      <button key={t.value} type="button" onClick={() => addQuestion(t.value)}
+                        className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700">
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </nav>
+          </aside>
+
+          {/* Center: the form canvas. */}
+          <div className="min-w-0">
+          <div id="builder-settings" className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-6 scroll-mt-24">
             <input
               type="text"
               value={survey.title}
@@ -541,6 +634,8 @@ function SurveyBuilderInner() {
             </div>
           </div>
 
+          {incentiveCard}
+
           <div className="space-y-4">
             {survey.questions.map((q, i) => (
               <QuestionEditor
@@ -554,6 +649,9 @@ function SurveyBuilderInner() {
                 onMoveDown={() => moveQuestion(i, 1)}
                 onDuplicate={() => duplicateAt(i)}
                 onDelete={() => deleteAt(i)}
+                selected={q.id === selectedId}
+                onSelect={() => setSelectedId(q.id)}
+                hasInspector
               />
             ))}
           </div>
@@ -583,7 +681,29 @@ function SurveyBuilderInner() {
               </div>
             )}
           </div>
-        </>
+          </div>
+
+          {/* Right: settings for the selected question (xl+; inline on the card below that). */}
+          <aside className="hidden xl:block xl:sticky xl:top-24">
+            {selectedQ ? (
+              <QuestionInspector
+                question={selectedQ}
+                index={selectedIndex}
+                total={survey.questions.length}
+                allQuestions={survey.questions}
+                onChange={(patch) => patchQuestion(selectedQ.id, patch)}
+                onMoveUp={() => moveQuestion(selectedIndex, -1)}
+                onMoveDown={() => moveQuestion(selectedIndex, 1)}
+                onDuplicate={() => duplicateAt(selectedIndex)}
+                onDelete={() => deleteAt(selectedIndex)}
+              />
+            ) : (
+              <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5 text-sm text-slate-400">
+                Select a question on the canvas to edit its settings here.
+              </div>
+            )}
+          </aside>
+        </div>
       ) : (
         <>
           <div className="mb-6">

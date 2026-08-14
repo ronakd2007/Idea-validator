@@ -4,6 +4,7 @@ import './globals.css';
 import Navbar from '@/components/Navbar';
 import ViewAsBanner from '@/components/ViewAsBanner';
 import BackendWarmup from '@/components/BackendWarmup';
+import FeedbackProvider from '@/components/ui/feedback';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -22,9 +23,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <BackendWarmup />
           {/* Renders only while an admin is in View-as-User mode; sits above
               every sticky header (z-60) and cannot be dismissed. */}
-          <ViewAsBanner />
-          <Navbar />
-          <main>{children}</main>
+          <FeedbackProvider>
+            <ViewAsBanner />
+            <Navbar />
+            <main>{children}</main>
+          </FeedbackProvider>
         </div>
       </body>
     </html>

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAdminGuard } from '@/lib/adminGuard';
 import { setViewContext } from '@/lib/auth';
+import { useToast, useConfirm } from '@/components/ui/feedback';
 import {
   ROLE_STYLE, CATEGORY_STYLE, SURVEY_STATUS_STYLE, formatDate, formatDateTime, timeAgo, targetHref,
 } from '@/lib/adminActivity';
@@ -12,6 +13,8 @@ import {
 const TABS = ['Profile', 'Ideas', 'Surveys', 'Validations', 'Activity'];
 
 export default function AdminUserDetailPage() {
+  const toast = useToast();
+  const confirmDialog = useConfirm();
   const allowed = useAdminGuard();
   const params = useParams();
   const router = useRouter();
@@ -77,9 +80,11 @@ export default function AdminUserDetailPage() {
           <div className="flex flex-wrap gap-2">
             <button
               onClick={async () => {
-                const ok = window.confirm(
-                  `View this account as ${user.name}?\n\nYou will temporarily view the platform from this user's perspective. Your admin session will remain active.`
-                );
+                const ok = await confirmDialog({
+                  title: `View as ${user.name}?`,
+                  body: "You will temporarily see the platform from this user's perspective, read-only. Your admin session stays active — exit any time from the banner.",
+                  confirmLabel: 'Start View Mode',
+                });
                 if (!ok) return;
                 setStartingView(true);
                 try {
@@ -87,7 +92,7 @@ export default function AdminUserDetailPage() {
                   setViewContext({ token: res.viewToken, expiresAt: res.expiresAt, target: res.target });
                   router.push(res.target.role === 'VALIDATOR' ? '/validator/dashboard' : '/founder');
                 } catch (err: any) {
-                  alert(err.message);
+                  toast.error(err.message);
                   setStartingView(false);
                 }
               }}
@@ -98,16 +103,21 @@ export default function AdminUserDetailPage() {
             </button>
             <button
               onClick={async () => {
-                const typed = window.prompt(
-                  `Permanently delete ${user.name} (${user.email})?\n\nThis erases their account AND all their history: ideas, validations, surveys, responses, payments and activity. This cannot be undone.\n\nType DELETE to confirm:`
-                );
-                if (typed !== 'DELETE') return;
+                const ok = await confirmDialog({
+                  title: `Permanently delete ${user.name}?`,
+                  body: `This erases ${user.email}'s account AND all their history: ideas, validations, surveys, responses, payments and activity. This cannot be undone.`,
+                  confirmLabel: 'Delete Permanently',
+                  danger: true,
+                  typeToConfirm: 'DELETE',
+                });
+                if (!ok) return;
                 setDeleting(true);
                 try {
                   await api.adminDeleteUser(user.id);
+                  toast.success(`${user.name} and all their data have been deleted.`);
                   router.push('/admin/users');
                 } catch (err: any) {
-                  alert(err.message);
+                  toast.error(err.message);
                   setDeleting(false);
                 }
               }}

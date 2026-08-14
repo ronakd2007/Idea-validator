@@ -5,26 +5,18 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { getStoredUser } from '@/lib/auth';
 import SurveyQrModal from '@/components/survey/SurveyQrModal';
-
-const STATUS_BADGE: Record<string, string> = {
-  DRAFT: 'bg-slate-100 text-slate-600',
-  LIVE: 'bg-emerald-50 text-emerald-700',
-  CLOSED: 'bg-amber-50 text-amber-700',
-  ARCHIVED: 'bg-slate-100 text-slate-500',
-};
-
-const STATUS_DOT: Record<string, string> = {
-  DRAFT: 'bg-slate-400',
-  LIVE: 'bg-emerald-500',
-  CLOSED: 'bg-amber-500',
-  ARCHIVED: 'bg-slate-400',
-};
+import PageHeader from '@/components/ui/PageHeader';
+import EmptyState from '@/components/ui/EmptyState';
+import StatusBadge, { STATUS_TONE } from '@/components/ui/StatusBadge';
+import { SkeletonList } from '@/components/ui/Skeleton';
+import { useToast, useConfirm } from '@/components/ui/feedback';
 
 export default function MySurveysPage() {
   const router = useRouter();
-  const [surveys, setSurveys] = useState<any[]>([]);
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [surveys, setSurveys] = useState<any[] | null>(null);
   const [ideas, setIdeas] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [qrSurvey, setQrSurvey] = useState<any>(null);
   const [createStep, setCreateStep] = useState<'choice' | 'manual' | null>(null);
@@ -35,7 +27,7 @@ export default function MySurveysPage() {
   useEffect(() => {
     const user = getStoredUser();
     if (!user || user.role !== 'FOUNDER') { router.push('/auth/login'); return; }
-    api.getMySurveys().then(setSurveys).catch(() => {}).finally(() => setLoading(false));
+    api.getMySurveys().then(setSurveys).catch(() => setSurveys([]));
     api.getMyIdeas().then(setIdeas).catch(() => {});
   }, []);
 
@@ -73,40 +65,49 @@ export default function MySurveysPage() {
   };
 
   const closeSurvey = async (survey: any) => {
-    if (!window.confirm('Close this survey?\n\nRespondents will no longer be able to submit responses.')) return;
+    const ok = await confirm({
+      title: 'Close this survey?',
+      body: 'Respondents will no longer be able to submit responses. You can reopen it later from the builder.',
+      confirmLabel: 'Close Survey',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       const updated = await api.closeSurvey(survey.id);
-      setSurveys((prev) => prev.map((s) => (s.id === survey.id ? { ...s, status: updated.status } : s)));
-    } catch {
-      // surfaced implicitly — status simply won't change; founder can retry from the builder
+      setSurveys((prev) => (prev ?? []).map((s) => (s.id === survey.id ? { ...s, status: updated.status } : s)));
+      toast.success(`"${survey.title || 'Survey'}" closed — it no longer accepts responses.`);
+    } catch (err: any) {
+      toast.error(err.message || 'Could not close the survey. Please try again.');
     }
   };
 
+  const secondaryBtn = 'text-sm bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg hover:border-slate-300 text-center transition';
+
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">My Surveys</h1>
-          <p className="text-slate-500 mt-1">Mass surveys you&apos;ve created</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link href="/founder/ideas" className="bg-white border border-slate-200 text-slate-700 px-5 py-2.5 rounded-lg font-semibold hover:border-slate-300 transition">
-            Go to My Ideas
-          </Link>
-          <button onClick={openCreate} className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-blue-700 transition">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+      <PageHeader
+        title="My Surveys"
+        subtitle="Build, share and analyze mass surveys"
+        actions={
+          <button onClick={openCreate} className="bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition">
             + Create Survey
           </button>
-        </div>
-      </div>
+        }
+      />
 
-      {loading && <div className="text-center py-20 text-slate-500">Loading...</div>}
+      {surveys === null && <SkeletonList />}
 
-      {!loading && surveys.length === 0 && (
-        <div className="text-center py-20">
-          <h2 className="text-xl font-semibold text-slate-800 mb-2">No surveys yet</h2>
-          <p className="text-slate-500 mb-6">Create a Mass Survey to start collecting structured feedback — no idea required.</p>
-          <button onClick={openCreate} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-semibold">+ Create Survey</button>
-        </div>
+      {surveys !== null && surveys.length === 0 && (
+        <EmptyState
+          icon="📋"
+          title="No surveys yet"
+          body="Surveys collect structured answers from real people in your target market — evidence you can put next to expert validation. No idea submission required."
+          action={
+            <button onClick={openCreate} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition">
+              + Create Survey
+            </button>
+          }
+        />
       )}
 
       {createStep === 'choice' && (
@@ -179,55 +180,57 @@ export default function MySurveysPage() {
       )}
 
       <div className="space-y-4">
-        {surveys.map((s) => (
-          <div key={s.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex items-start justify-between gap-4 flex-wrap">
-            <div className="flex-1 min-w-0 sm:min-w-[240px]">
-              <h3 className="text-lg font-semibold text-slate-900">{s.title || 'Untitled survey'}</h3>
-              <p className="text-sm text-slate-500 mt-0.5">{s.idea?.title || 'Standalone survey'}</p>
-              <div className="flex items-center gap-2 mt-3 flex-wrap">
-                <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full font-medium ${STATUS_BADGE[s.status] || STATUS_BADGE.DRAFT}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[s.status] || STATUS_DOT.DRAFT}`} />
-                  {s.status}
-                </span>
-                <span className="text-xs text-slate-400">{s._count?.questions ?? 0} question{s._count?.questions !== 1 ? 's' : ''}</span>
-                {s.status !== 'DRAFT' && (
-                  <span className="text-xs text-slate-400">{s._count?.responses ?? 0} response{s._count?.responses !== 1 ? 's' : ''}</span>
-                )}
-                <span className="text-xs text-slate-400">Created {new Date(s.createdAt).toLocaleDateString()}</span>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2 shrink-0">
-              <Link href={`/founder/surveys/${s.id}/edit`} className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 text-center">
-                {s.status === 'DRAFT' ? 'Open Builder' : 'Manage'}
-              </Link>
-              {s.status === 'DRAFT' && (
-                <Link href={`/founder/surveys/${s.id}/edit?mode=preview`} className="text-sm bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg hover:border-slate-300 text-center">
-                  Preview
-                </Link>
-              )}
-              {s.status !== 'DRAFT' && (
-                <>
-                  <Link href={`/founder/surveys/${s.id}/analytics`} className="text-sm bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg hover:border-slate-300 text-center">
-                    Analytics
-                  </Link>
-                  <Link href={`/founder/surveys/${s.id}/responses`} className="text-sm bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg hover:border-slate-300 text-center">
-                    Responses
-                  </Link>
-                  <button onClick={() => copyLink(s)} className="text-sm bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg hover:border-slate-300 text-center">
-                    {copiedId === s.id ? 'Copied!' : 'Copy Link'}
-                  </button>
-                  {s.publicId && (
-                    <button onClick={() => setQrSurvey(s)} className="text-sm bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg hover:border-slate-300 text-center">
-                      QR Code
-                    </button>
+        {(surveys ?? []).map((s) => (
+          <div key={s.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 sm:p-6 hover:border-slate-300 transition">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="flex-1 min-w-0 sm:min-w-[240px]">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-base sm:text-lg font-semibold text-slate-900">{s.title || 'Untitled survey'}</h3>
+                  <StatusBadge tone={STATUS_TONE[s.status] || 'neutral'} dot>{s.status}</StatusBadge>
+                </div>
+                <p className="text-sm text-slate-500 mt-0.5">{s.idea?.title || 'Standalone survey'}</p>
+                <div className="flex items-center gap-x-3 gap-y-1 mt-2.5 flex-wrap text-xs text-slate-400">
+                  <span>{s._count?.questions ?? 0} question{s._count?.questions !== 1 ? 's' : ''}</span>
+                  {s.status !== 'DRAFT' && (
+                    <span>{s._count?.responses ?? 0} response{s._count?.responses !== 1 ? 's' : ''}</span>
                   )}
-                </>
-              )}
-              {s.status === 'LIVE' && (
-                <button onClick={() => closeSurvey(s)} className="text-sm bg-white border border-red-200 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 text-center">
-                  Close Survey
-                </button>
-              )}
+                  <span>Created {new Date(s.createdAt).toLocaleDateString()}</span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 shrink-0 w-full sm:w-auto">
+                <Link href={`/founder/surveys/${s.id}/edit`} className="flex-1 sm:flex-none text-sm bg-blue-600 text-white px-3.5 py-1.5 rounded-lg hover:bg-blue-700 text-center font-semibold transition">
+                  {s.status === 'DRAFT' ? 'Open Builder' : 'Manage'}
+                </Link>
+                {s.status === 'DRAFT' && (
+                  <Link href={`/founder/surveys/${s.id}/edit?mode=preview`} className={`flex-1 sm:flex-none ${secondaryBtn}`}>
+                    Preview
+                  </Link>
+                )}
+                {s.status !== 'DRAFT' && (
+                  <>
+                    <Link href={`/founder/surveys/${s.id}/analytics`} className={`flex-1 sm:flex-none ${secondaryBtn}`}>
+                      Analytics
+                    </Link>
+                    <Link href={`/founder/surveys/${s.id}/responses`} className={`flex-1 sm:flex-none ${secondaryBtn}`}>
+                      Responses
+                    </Link>
+                    <button onClick={() => copyLink(s)} className={`flex-1 sm:flex-none ${secondaryBtn}`}>
+                      {copiedId === s.id ? 'Copied!' : 'Copy Link'}
+                    </button>
+                    {s.publicId && (
+                      <button onClick={() => setQrSurvey(s)} className={`flex-1 sm:flex-none ${secondaryBtn}`}>
+                        QR Code
+                      </button>
+                    )}
+                  </>
+                )}
+                {s.status === 'LIVE' && (
+                  <button onClick={() => closeSurvey(s)} className="flex-1 sm:flex-none text-sm bg-white border border-red-200 text-red-600 px-3.5 py-1.5 rounded-lg hover:bg-red-50 text-center transition">
+                    Close Survey
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         ))}

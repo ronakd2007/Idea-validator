@@ -12,6 +12,12 @@ interface Props {
   onMoveDown: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  // 3-pane builder: card highlights as the selected canvas block, and the
+  // footer controls (required + analytics) move to the right-hand inspector
+  // on large screens — below lg they stay inline so nothing is unreachable.
+  selected?: boolean;
+  onSelect?: () => void;
+  hasInspector?: boolean;
 }
 
 const CHOICE_TYPES = ['MULTIPLE_CHOICE', 'CHECKBOXES', 'DROPDOWN'];
@@ -23,7 +29,7 @@ function OptionIcon({ type }: { type: string }) {
   return <span className="w-4 h-4 rounded-full border border-slate-300 shrink-0" />;
 }
 
-export default function QuestionEditor({ question, index, total, allQuestions, onChange, onMoveUp, onMoveDown, onDuplicate, onDelete }: Props) {
+export default function QuestionEditor({ question, index, total, allQuestions, onChange, onMoveUp, onMoveDown, onDuplicate, onDelete, selected = false, onSelect, hasInspector = false }: Props) {
   const q = question;
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -41,7 +47,13 @@ export default function QuestionEditor({ question, index, total, allQuestions, o
   };
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+    <div
+      id={`qcard-${q.id}`}
+      onClick={onSelect}
+      className={`bg-white border rounded-xl p-5 shadow-sm scroll-mt-24 transition-shadow ${
+        selected ? 'border-blue-500 ring-2 ring-blue-500/30 shadow-md' : 'border-slate-200 hover:border-slate-300'
+      }`}
+    >
       <div className="flex items-start justify-between gap-4 mb-4">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-slate-400">Question {index + 1}</span>
@@ -226,7 +238,7 @@ export default function QuestionEditor({ question, index, total, allQuestions, o
         </div>
       )}
 
-      <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+      <div className={`flex items-center justify-between pt-3 border-t border-slate-100 ${hasInspector ? 'lg:hidden' : ''}`}>
         <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
           <span>Required</span>
           <button
@@ -245,7 +257,7 @@ export default function QuestionEditor({ question, index, total, allQuestions, o
       </div>
 
       {showAdvanced && (
-        <div className="mt-3 pt-3 border-t border-slate-100 space-y-4">
+        <div className={`mt-3 pt-3 border-t border-slate-100 space-y-4 ${hasInspector ? 'lg:hidden' : ''}`}>
           <p className="text-[11px] text-slate-400">These settings only affect analytics — respondents never see them.</p>
 
           {NUMERIC_TYPES.includes(q.type) && (

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { getRealUser } from '@/lib/auth';
+import { useToast, useConfirm } from '@/components/ui/feedback';
 
 const STATUS_STYLE: Record<string, string> = {
   DRAFT: 'bg-slate-100 text-slate-700',
@@ -13,6 +14,8 @@ const STATUS_STYLE: Record<string, string> = {
 
 export default function AdminSurveysPage() {
   const router = useRouter();
+  const toast = useToast();
+  const confirmDialog = useConfirm();
   const [surveys, setSurveys] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -28,17 +31,25 @@ export default function AdminSurveysPage() {
     try {
       const updated = await api.adminToggleSurveyStatus(id);
       setSurveys((s) => s.map((x) => (x.id === id ? { ...x, status: updated.status } : x)));
-    } catch (err: any) { alert(err.message); }
+      toast.success(updated.status === 'LIVE' ? 'Survey reopened.' : 'Survey closed.');
+    } catch (err: any) { toast.error(err.message); }
     finally { setActionLoading(null); }
   };
 
   const deleteSurvey = async (id: string, title: string) => {
-    if (!confirm(`Delete survey "${title}"? This cannot be undone.`)) return;
+    const ok = await confirmDialog({
+      title: `Delete "${title}"?`,
+      body: 'The survey and all its responses are removed permanently. This cannot be undone.',
+      confirmLabel: 'Delete Survey',
+      danger: true,
+    });
+    if (!ok) return;
     setActionLoading(id);
     try {
       await api.adminDeleteSurvey(id);
       setSurveys((s) => s.filter((x) => x.id !== id));
-    } catch (err: any) { alert(err.message); }
+      toast.success('Survey deleted.');
+    } catch (err: any) { toast.error(err.message); }
     finally { setActionLoading(null); }
   };
 

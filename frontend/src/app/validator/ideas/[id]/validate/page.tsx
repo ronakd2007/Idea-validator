@@ -10,15 +10,20 @@ import { FRAMEWORKS } from '@/lib/frameworks';
 const RISK_LEVELS = ['LOW', 'MEDIUM', 'HIGH'];
 
 const RiskRow = ({ label, prob, impact, onProb, onImpact }: any) => (
-  <div className="grid grid-cols-3 gap-4 mb-3 items-center">
-    <span className="text-sm text-slate-700">{label}</span>
-    <div className="flex gap-1">
+  // Stacks on phones: three 33px-wide buttons per column can't fit the word
+  // "MEDIUM" side by side at 390px — each selector gets a labeled full-width
+  // row instead. The 3-column matrix returns at sm.
+  <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 sm:gap-4 mb-5 sm:mb-3 sm:items-center">
+    <span className="text-sm text-slate-700 font-medium sm:font-normal">{label}</span>
+    <div className="flex gap-1 items-center">
+      <span className="sm:hidden text-[10px] font-medium uppercase tracking-wide text-slate-400 w-16 shrink-0">Probability</span>
       {RISK_LEVELS.map(l => (
         <button type="button" key={l} onClick={() => onProb(l)}
           className={`flex-1 py-1 text-xs rounded border transition ${prob === l ? 'bg-blue-600 text-white border-blue-600' : 'border-slate-300 text-slate-500'}`}>{l}</button>
       ))}
     </div>
-    <div className="flex gap-1">
+    <div className="flex gap-1 items-center">
+      <span className="sm:hidden text-[10px] font-medium uppercase tracking-wide text-slate-400 w-16 shrink-0">Impact</span>
       {RISK_LEVELS.map(l => (
         <button type="button" key={l} onClick={() => onImpact(l)}
           className={`flex-1 py-1 text-xs rounded border transition ${impact === l ? 'bg-red-600 text-white border-red-600' : 'border-slate-300 text-slate-500'}`}>{l}</button>
@@ -396,7 +401,7 @@ export default function ValidateIdeaPage() {
                 <ScoreSelector label="Network Effects" value={scalability.networkEffects} onChange={v => setScalability({ ...scalability, networkEffects: v })} />
                 <hr className="my-5 border-slate-200" />
                 <h3 className="font-medium text-slate-800 mb-3">Risk Assessment</h3>
-                <div className="grid grid-cols-3 gap-4 mb-2 text-xs font-medium text-slate-500">
+                <div className="hidden sm:grid grid-cols-3 gap-4 mb-2 text-xs font-medium text-slate-500">
                   <span>Risk Type</span><span>Probability</span><span>Impact</span>
                 </div>
                 {[

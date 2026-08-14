@@ -25,14 +25,62 @@ const QUALITY_STYLE: Record<string, { label: string; chip: string }> = {
   POTENTIALLY_LOW: { label: 'Potentially Low Quality', chip: 'bg-red-50 text-red-700' },
 };
 
-function SummaryCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+const NOTE_TONE: Record<string, string> = {
+  positive: 'text-emerald-600',
+  warning: 'text-amber-600',
+  neutral: 'text-slate-400',
+};
+
+// Every headline number carries one plain-language sentence saying what it
+// means for the founder — the number alone never has to be interpreted.
+function SummaryCard({ label, value, sub, note, noteTone = 'neutral' }: { label: string; value: string; sub?: string; note?: string; noteTone?: 'positive' | 'warning' | 'neutral' }) {
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
       <p className="text-xs text-slate-500 mb-1">{label}</p>
       <p className="text-2xl font-bold text-slate-900 tabular-nums">{value}</p>
       {sub && <p className="text-[11px] text-slate-400 mt-1">{sub}</p>}
+      {note && <p className={`text-[11px] leading-snug mt-1.5 ${NOTE_TONE[noteTone]}`}>{note}</p>}
     </div>
   );
+}
+
+// Interpretation rules — thresholds are product guidance, not statistics.
+function interpret(summary: any): {
+  confidence: { note: string; tone: 'positive' | 'warning' | 'neutral' };
+  completion?: { note: string; tone: 'positive' | 'warning' | 'neutral' };
+  quality?: { note: string; tone: 'positive' | 'warning' | 'neutral' };
+} {
+  const n = summary.totalResponses;
+  const confidence =
+    n === 0
+      ? { note: 'No responses yet — share the link or QR code to start collecting.', tone: 'neutral' as const }
+      : n < 10
+        ? { note: 'Very limited data — treat everything below as hints, not conclusions.', tone: 'warning' as const }
+        : n < 30
+          ? { note: 'An early signal — enough to spot patterns, not to be sure of them.', tone: 'neutral' as const }
+          : { note: 'A solid sample for an early-stage survey — patterns here are worth acting on.', tone: 'positive' as const };
+
+  const rate = summary.completionRate;
+  const completion =
+    rate == null
+      ? undefined
+      : rate >= 70
+        ? { note: 'Strong — most people who start actually finish.', tone: 'positive' as const }
+        : rate >= 40
+          ? { note: 'Moderate — trimming a question or two usually lifts this.', tone: 'neutral' as const }
+          : { note: 'Low — the survey may be too long, or an early question puts people off.', tone: 'warning' as const };
+
+  const q = summary.qualityHighPct;
+  const quality =
+    q == null
+      ? undefined
+      : q >= 80
+        ? { note: 'Answers look considered — few rushed or contradictory responses.', tone: 'positive' as const }
+        : q >= 50
+          ? { note: 'Mostly fine — skim the flagged responses before relying on them.', tone: 'neutral' as const }
+          : { note: 'Many responses show rushed patterns — review them before drawing conclusions.', tone: 'warning' as const };
+
+  return { confidence, completion, quality };
 }
 
 function DistributionBar({ label, count, pct, imageUrl }: { label: string; count: number; pct: number; imageUrl?: string | null }) {
@@ -203,13 +251,18 @@ export default function SurveyAnalyticsPage() {
         </div>
       )}
 
-      {/* Top summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <SummaryCard label="Total Responses" value={String(summary.totalResponses)} sub={sampleSizeLabel} />
-        <SummaryCard label="Completion Rate" value={summary.completionRate != null ? `${summary.completionRate.toFixed(0)}%` : 'N/A'} />
-        <SummaryCard label="Avg. Completion Time" value={summary.avgCompletionTime} />
-        <SummaryCard label="Response Quality" value={summary.qualityHighPct != null ? `${summary.qualityHighPct.toFixed(0)}%` : 'N/A'} sub="High quality" />
-      </div>
+      {/* Top summary cards — each with a plain-language read of the number */}
+      {(() => {
+        const meaning = interpret(summary);
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <SummaryCard label="Total Responses" value={String(summary.totalResponses)} sub={sampleSizeLabel} note={meaning.confidence.note} noteTone={meaning.confidence.tone} />
+            <SummaryCard label="Completion Rate" value={summary.completionRate != null ? `${summary.completionRate.toFixed(0)}%` : 'N/A'} note={meaning.completion?.note} noteTone={meaning.completion?.tone} />
+            <SummaryCard label="Avg. Completion Time" value={summary.avgCompletionTime} note="Typical time from opening the survey to submitting it." />
+            <SummaryCard label="Response Quality" value={summary.qualityHighPct != null ? `${summary.qualityHighPct.toFixed(0)}%` : 'N/A'} sub="High quality" note={meaning.quality?.note} noteTone={meaning.quality?.tone} />
+          </div>
+        );
+      })()}
 
       {/* Key Insights */}
       {insights.length > 0 && (
@@ -437,7 +490,11 @@ export default function SurveyAnalyticsPage() {
       {/* Drop-off */}
       {dropOff.length > 1 && (
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mb-6">
-          <h3 className="font-semibold text-slate-900 mb-4">Question Drop-off</h3>
+          <h3 className="font-semibold text-slate-900 mb-1">Question Drop-off</h3>
+          <p className="text-xs text-slate-500 mb-4">
+            How far respondents get before giving up. A steep fall after one question usually means that question is
+            confusing, too personal, or too much effort — fixing it is the fastest way to get more complete responses.
+          </p>
           <BarChart data={dropOff.map((d: any) => ({ label: `Q${d.index + 1}`, value: d.reachedPct }))} color="#60a5fa" />
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-4">
             {dropOff.map((d: any) => (

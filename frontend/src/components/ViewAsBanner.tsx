@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { getRealUser, getViewContext, clearViewContext, type ViewAsContext } from '@/lib/auth';
+import { useToast } from '@/components/ui/feedback';
 
 /**
  * The persistent ADMIN VIEW MODE indicator. Fixed above every sticky header
@@ -17,6 +18,7 @@ import { getRealUser, getViewContext, clearViewContext, type ViewAsContext } fro
 export default function ViewAsBanner() {
   const pathname = usePathname();
   const router = useRouter();
+  const toast = useToast();
   const [ctx, setCtx] = useState<ViewAsContext | null>(null);
   const [minutesLeft, setMinutesLeft] = useState<number | null>(null);
 
@@ -47,10 +49,10 @@ export default function ViewAsBanner() {
     return () => clearTimeout(t);
     function onExpired() {
       clearViewContext();
-      alert('View as User session expired.');
+      toast.info('View as User session expired — back to your admin account.');
       router.push('/admin');
     }
-  }, [ctx, router]);
+  }, [ctx, router, toast]);
 
   // Keep every sticky header below the banner honest about the extra 44px.
   useEffect(() => {

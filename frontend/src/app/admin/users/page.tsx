@@ -4,12 +4,18 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { getRealUser, setViewContext } from '@/lib/auth';
+import { useToast, useConfirm } from '@/components/ui/feedback';
+import { Skeleton } from '@/components/ui/Skeleton';
+import EmptyState from '@/components/ui/EmptyState';
 
 export default function AdminUsersPage() {
   const router = useRouter();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
+  const [search, setSearch] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
@@ -19,9 +25,11 @@ export default function AdminUsersPage() {
   }, []);
 
   const viewAsUser = async (u: any) => {
-    const ok = window.confirm(
-      `View this account as ${u.name}?\n\nYou will temporarily view the platform from this user's perspective. Your admin session will remain active.`
-    );
+    const ok = await confirm({
+      title: `View as ${u.name}?`,
+      body: "You will temporarily see the platform from this user's perspective, read-only. Your admin session stays active — exit any time from the banner.",
+      confirmLabel: 'Start View Mode',
+    });
     if (!ok) return;
     setActionLoading(u.id + '_view');
     try {
@@ -29,7 +37,7 @@ export default function AdminUsersPage() {
       setViewContext({ token: res.viewToken, expiresAt: res.expiresAt, target: res.target });
       router.push(res.target.role === 'VALIDATOR' ? '/validator/dashboard' : '/founder');
     } catch (err: any) {
-      alert(err.message);
+      toast.error(err.message);
     } finally {
       setActionLoading(null);
     }
@@ -38,15 +46,20 @@ export default function AdminUsersPage() {
   // Irreversible — everything the user ever created goes with them, so the
   // confirmation requires typing DELETE rather than one accidental click.
   const deleteUser = async (u: any) => {
-    const typed = window.prompt(
-      `Permanently delete ${u.name} (${u.email})?\n\nThis erases their account AND all their history: ideas, validations, surveys, responses, payments and activity. This cannot be undone.\n\nType DELETE to confirm:`
-    );
-    if (typed !== 'DELETE') return;
+    const ok = await confirm({
+      title: `Permanently delete ${u.name}?`,
+      body: `This erases ${u.email}'s account AND all their history: ideas, validations, surveys, responses, payments and activity. This cannot be undone.`,
+      confirmLabel: 'Delete Permanently',
+      danger: true,
+      typeToConfirm: 'DELETE',
+    });
+    if (!ok) return;
     setActionLoading(u.id + '_delete');
     try {
       await api.adminDeleteUser(u.id);
       setUsers(prev => prev.filter(x => x.id !== u.id));
-    } catch (err: any) { alert(err.message); }
+      toast.success(`${u.name} and all their data have been deleted.`);
+    } catch (err: any) { toast.error(err.message); }
     finally { setActionLoading(null); }
   };
 
@@ -55,12 +68,15 @@ export default function AdminUsersPage() {
     try {
       const updated = await api.toggleUserStatus(id);
       setUsers(u => u.map(x => x.id === id ? { ...x, isActive: updated.isActive } : x));
-    } catch (err: any) { alert(err.message); }
+      toast.success(updated.isActive ? 'Account activated.' : 'Account deactivated — they can no longer sign in.');
+    } catch (err: any) { toast.error(err.message); }
     finally { setActionLoading(null); }
   };
 
+  const term = search.trim().toLowerCase();
   const filtered = users.filter(u =>
-    (!filter || u.role === filter) && u.role !== 'ADMIN'
+    (!filter || u.role === filter) && u.role !== 'ADMIN' &&
+    (!term || u.name?.toLowerCase().includes(term) || u.email?.toLowerCase().includes(term))
   );
 
   const roleColor: Record<string, string> = {
@@ -79,19 +95,31 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      <div className="flex gap-2 mb-6">
+      <div className="flex flex-wrap items-center gap-2 mb-6">
         {['', 'FOUNDER', 'VALIDATOR'].map(r => (
           <button key={r} onClick={() => setFilter(r)}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${filter === r ? 'bg-blue-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:border-blue-400'}`}>
             {r || 'All'}
           </button>
         ))}
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name or email…"
+          className="ml-auto w-full sm:w-64 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400"
+        />
       </div>
 
-      {loading && <div className="text-center py-20 text-slate-500">Loading...</div>}
+      {loading && (
+        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 space-y-3">
+          {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
+        </div>
+      )}
 
       {/* overflow-x-auto, not overflow-hidden — six columns exceed a phone's width,
           and hidden clipped the Actions column with no way to reach it. */}
+      {!loading && (
       <div className="bg-white border border-slate-200 shadow-sm rounded-xl overflow-x-auto">
         <table className="w-full text-sm min-w-[820px]">
           <thead className="bg-slate-50 border-b border-slate-200">
@@ -149,9 +177,14 @@ export default function AdminUsersPage() {
           </tbody>
         </table>
         {!loading && filtered.length === 0 && (
-          <div className="text-center py-10 text-slate-500">No users found</div>
+          <EmptyState
+            compact
+            title="No users match"
+            body={term || filter ? 'Try clearing the search or role filter.' : 'New founders and validators appear here as they register.'}
+          />
         )}
       </div>
+      )}
     </div>
   );
 }
