@@ -3,7 +3,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { IdeasService } from './ideas.service';
-import { CreateIdeaDto } from './dto/idea.dto';
+import { CreateIdeaDto, UpdateAssumptionsDto } from './dto/idea.dto';
 
 @Controller('ideas')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -48,6 +48,14 @@ export class IdeasController {
   @Roles('FOUNDER')
   getBenchmark(@Param('id') id: string, @Request() req) {
     return this.ideasService.getBenchmark(id, req.user.userId);
+  }
+
+  // Assumption Checker: replace the founder's hypothesis list. Private to the
+  // founder — never exposed on the public validation page.
+  @Patch(':id/assumptions')
+  @Roles('FOUNDER')
+  updateAssumptions(@Param('id') id: string, @Request() req, @Body() body: UpdateAssumptionsDto) {
+    return this.ideasService.updateAssumptions(id, req.user.userId, body.assumptions);
   }
 
   @Post(':id/share')

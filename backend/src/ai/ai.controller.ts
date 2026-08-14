@@ -31,4 +31,12 @@ export class AiController {
   async generateGapSurvey(@Request() req: any, @Body() body: { ideaId: string; gapKey: string }) {
     return this.aiService.generateGapSurvey(body.ideaId, req.user.userId, body.gapKey || 'DEFAULT');
   }
+
+  // Assumption Checker: suggest up to 5 testable hypotheses for the founder
+  // to review — nothing is saved unless the founder explicitly accepts them.
+  @Post('suggest-assumptions')
+  @Roles('FOUNDER')
+  async suggestAssumptions(@Request() req: any, @Body() body: { ideaId?: string; draft?: any }) {
+    return this.aiService.suggestAssumptions(req.user.userId, { ideaId: body?.ideaId, draft: body?.draft });
+  }
 }

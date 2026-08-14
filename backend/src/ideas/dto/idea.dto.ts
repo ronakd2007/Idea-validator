@@ -5,6 +5,21 @@ import {
 
 const STAGES = ['IDEA', 'RESEARCH', 'PROTOTYPE', 'MVP', 'REVENUE_GENERATING'];
 
+// Assumption Checker categories — mirrored in the frontend evaluator.
+export const ASSUMPTION_CATEGORIES = ['PRICING', 'CUSTOMER', 'PROBLEM', 'COMPETITION', 'TECHNOLOGY', 'OTHER'];
+
+export class AssumptionDto {
+  @IsString() @MinLength(5) @MaxLength(300) statement: string;
+  @IsOptional() @IsIn(ASSUMPTION_CATEGORIES) category?: string;
+}
+
+// No product min/max — a founder may define 0 or 20. The array cap is a
+// technical anti-abuse bound, invisible in normal use.
+export class UpdateAssumptionsDto {
+  @IsArray() @ArrayMaxSize(20) @ValidateNested({ each: true }) @Type(() => AssumptionDto)
+  assumptions: AssumptionDto[];
+}
+
 export class TeamMemberDto {
   @IsString() @MinLength(1) @MaxLength(100) name: string;
   @IsString() @MinLength(1) @MaxLength(300) linkedinUrl: string;
@@ -35,4 +50,6 @@ export class CreateIdeaDto {
   teamMembers?: TeamMemberDto[];
   @IsOptional() @ValidateNested() @Type(() => SelfAssessmentDto)
   selfAssessment?: SelfAssessmentDto;
+  @IsOptional() @IsArray() @ArrayMaxSize(20) @ValidateNested({ each: true }) @Type(() => AssumptionDto)
+  assumptions?: AssumptionDto[];
 }

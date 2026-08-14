@@ -106,6 +106,10 @@ export const api = {
   generateSurveyDraft: (rawText: string) => request('/ai/generate-survey', { method: 'POST', body: JSON.stringify({ rawText }) }),
   generateGapSurvey: (ideaId: string, gapKey: string) => request('/ai/gap-survey', { method: 'POST', body: JSON.stringify({ ideaId, gapKey }) }),
   getIdeaBenchmark: (id: string) => request(`/ideas/${id}/benchmark`),
+  updateIdeaAssumptions: (id: string, assumptions: { statement: string; category?: string }[]) =>
+    request(`/ideas/${id}/assumptions`, { method: 'PATCH', body: JSON.stringify({ assumptions }) }),
+  suggestAssumptions: (input: { ideaId?: string; draft?: any }) =>
+    request('/ai/suggest-assumptions', { method: 'POST', body: JSON.stringify(input) }),
 
   // Mass Survey
   createSurvey: (body: { ideaId?: string; title: string; description?: string }) =>

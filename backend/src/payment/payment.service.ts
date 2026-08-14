@@ -8,7 +8,7 @@ export class PaymentService {
   private fee: number;
 
   constructor(private config: ConfigService, private prisma: PrismaService, private activity: ActivityService) {
-    this.fee = Number(config.get('IDEA_SUBMISSION_FEE', 999));
+    this.fee = Number(config.get('IDEA_SUBMISSION_FEE', 2999));
   }
 
   // Payment completing is the moment an idea actually goes live for validators,

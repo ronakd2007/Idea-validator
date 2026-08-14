@@ -55,6 +55,7 @@ export default function Navbar() {
               <Link href="/founder/surveys" className="hidden sm:inline text-sm text-slate-600 hover:text-slate-900 whitespace-nowrap">My Surveys</Link>
             )}
             <Link href="/tutorial" className="hidden sm:inline text-sm text-slate-600 hover:text-slate-900 whitespace-nowrap">Tutorial</Link>
+            <Link href="/pricing" className="hidden sm:inline text-sm text-slate-600 hover:text-slate-900 whitespace-nowrap">Pricing</Link>
             {inViewMode ? (
               // Never impersonate: this is the viewed user's page, not their
               // session. The amber treatment matches the banner; logout is
@@ -73,6 +74,7 @@ export default function Navbar() {
         ) : (
           <>
             <Link href="/tutorial" className="text-sm text-slate-600 hover:text-slate-900 whitespace-nowrap">Tutorial</Link>
+            <Link href="/pricing" className="text-sm text-slate-600 hover:text-slate-900 whitespace-nowrap">Pricing</Link>
             <Link href="/auth/login" className="text-sm text-slate-600 hover:text-slate-900 whitespace-nowrap">Login</Link>
             <Link href="/auth/register/founder" className="text-sm px-3 sm:px-4 py-2 rounded-lg transition bg-blue-600 text-white hover:bg-blue-700 whitespace-nowrap shrink-0">Get Started</Link>
           </>

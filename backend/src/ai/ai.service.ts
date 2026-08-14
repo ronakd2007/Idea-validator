@@ -241,6 +241,94 @@ NEXT STEPS
     return { summary, generatedAt, cached: false };
   }
 
+  // ---------- assumption suggestions ----------
+
+  private static readonly ASSUMPTION_CATEGORIES = ['PRICING', 'CUSTOMER', 'PROBLEM', 'COMPETITION', 'TECHNOLOGY', 'OTHER'];
+
+  /**
+   * Suggests up to 5 testable assumptions for the founder to REVIEW — nothing
+   * is ever saved here; the founder ticks the ones they agree with. Works from
+   * a saved idea (ideaId) or from in-progress form fields (draft), since the
+   * submit flow offers suggestions before the idea exists.
+   */
+  async suggestAssumptions(
+    founderId: string,
+    input: { ideaId?: string; draft?: { title?: string; problemStatement?: string; solutionDescription?: string; targetCustomer?: string; industryCategory?: string } }
+  ): Promise<{ suggestions: { statement: string; category: string }[] }> {
+    let idea: { title: string; industryCategory: string; problemStatement: string; solutionDescription: string; targetCustomer: string };
+
+    if (input.ideaId) {
+      const found = await this.prisma.idea.findUnique({
+        where: { id: input.ideaId },
+        select: { founderId: true, title: true, industryCategory: true, problemStatement: true, solutionDescription: true, targetCustomer: true },
+      });
+      if (!found) throw new NotFoundException('Idea not found');
+      if (found.founderId !== founderId) throw new ForbiddenException('Access denied');
+      idea = found;
+    } else {
+      const d = input.draft || {};
+      if (!d.title?.trim() || !d.problemStatement?.trim()) {
+        throw new BadRequestException('Fill in at least the idea title and problem statement first.');
+      }
+      idea = {
+        title: String(d.title).slice(0, 200),
+        industryCategory: String(d.industryCategory || 'General').slice(0, 80),
+        problemStatement: String(d.problemStatement).slice(0, 2000),
+        solutionDescription: String(d.solutionDescription || '').slice(0, 2000),
+        targetCustomer: String(d.targetCustomer || '').slice(0, 1000),
+      };
+    }
+
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) throw new ServiceUnavailableException('Groq API key not configured');
+
+    const prompt = `A founder is defining ASSUMPTIONS — beliefs that must be true for their idea to succeed, which will later be tested against real survey and expert-validation evidence.
+
+THE IDEA
+Title: ${idea.title}
+Industry: ${idea.industryCategory}
+Problem: ${idea.problemStatement}
+Solution: ${idea.solutionDescription}
+Target customer: ${idea.targetCustomer}
+
+Suggest exactly 5 assumptions this founder should test. RULES:
+1. Each is a BELIEF/HYPOTHESIS about this specific idea — phrased as something to verify, never stated as a fact.
+2. Each must be testable with a customer survey or expert review (demand, willingness to pay, problem frequency, preference over alternatives, buildability).
+3. Where a threshold makes the assumption sharper, use a plain generic one ("at least half", "at least 60%") — never invent specific market data.
+4. Max 140 characters each. No numbering inside the statement.
+5. Category must be one of: PRICING, CUSTOMER, PROBLEM, COMPETITION, TECHNOLOGY, OTHER.
+
+Return ONLY a single JSON object: { "assumptions": [ { "statement": string, "category": string } ] }`;
+
+    const groq = new Groq({ apiKey });
+    let raw: any;
+    try {
+      const completion = await groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.4,
+        max_tokens: 700,
+        response_format: { type: 'json_object' },
+      });
+      raw = JSON.parse(completion.choices[0]?.message?.content || '{}');
+    } catch (err: any) {
+      if (err instanceof SyntaxError) throw new ServiceUnavailableException("Couldn't generate suggestions — please try again.");
+      throw this.toAiError(err);
+    }
+
+    // Whitelist + clamp — the model's output is never trusted as-is.
+    const suggestions = (Array.isArray(raw?.assumptions) ? raw.assumptions : [])
+      .map((a: any) => ({
+        statement: String(a?.statement || '').trim().slice(0, 300),
+        category: AiService.ASSUMPTION_CATEGORIES.includes(a?.category) ? a.category : 'OTHER',
+      }))
+      .filter((a: any) => a.statement.length >= 5)
+      .slice(0, 5);
+
+    if (!suggestions.length) throw new ServiceUnavailableException("Couldn't generate suggestions — please try again.");
+    return { suggestions };
+  }
+
   // ---------- gap-to-survey generator ----------
 
   // Question archetypes per validation gap. The model adapts these to the

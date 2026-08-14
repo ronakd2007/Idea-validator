@@ -51,6 +51,10 @@ model Idea {
   title               String
   videoUrl            String   @default("")
   teamMembers         String   @default("[]") // JSON array of { name, linkedinUrl }
+  // Assumption Checker — JSON array of { statement, category? }. Statuses are
+  // NEVER stored: they're computed live against current evidence, so they
+  // update automatically as validations and survey responses arrive.
+  assumptions         String   @default("[]")
   industryCategory    String
   problemStatement    String
   solutionDescription String

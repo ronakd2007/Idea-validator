@@ -43,11 +43,12 @@ export class IdeasService {
   }
 
   async create(founderId: string, data: any) {
-    const { selfAssessment, teamMembers, ...ideaData } = data;
+    const { selfAssessment, teamMembers, assumptions, ...ideaData } = data;
     const idea = await this.prisma.idea.create({
       data: {
         ...ideaData,
         teamMembers: JSON.stringify(teamMembers || []),
+        assumptions: JSON.stringify((assumptions || []).filter((x: any) => x?.statement?.trim())),
         founderId,
         paymentStatus: 'PENDING',
         selfAssessment: selfAssessment ? { create: selfAssessment } : undefined,
@@ -337,11 +338,12 @@ export class IdeasService {
     if (!original) throw new NotFoundException('Original idea not found');
     if (original.founderId !== founderId) throw new ForbiddenException('Access denied');
 
-    const { selfAssessment, teamMembers, ...ideaData } = data;
+    const { selfAssessment, teamMembers, assumptions, ...ideaData } = data;
     const revision = await this.prisma.idea.create({
       data: {
         ...ideaData,
         teamMembers: JSON.stringify(teamMembers || []),
+        assumptions: JSON.stringify((assumptions || []).filter((x: any) => x?.statement?.trim())),
         founderId,
         isRevision: true,
         revisionOf: originalIdeaId,
@@ -501,6 +503,26 @@ export class IdeasService {
    * an explicit whitelist — no idea/validator/founder object is ever spread
    * into the response, so adding DB fields later can't silently leak here.
    */
+  // ---------- assumption checker ----------
+
+  /**
+   * Replaces the idea's assumption list. Assumptions are the founder's own
+   * hypotheses — statuses are never stored, they're computed client-side
+   * against live evidence. An empty array is a valid way to clear them.
+   */
+  async updateAssumptions(ideaId: string, founderId: string, assumptions: { statement: string; category?: string }[]) {
+    const idea = await this.prisma.idea.findUnique({ where: { id: ideaId }, select: { founderId: true } });
+    if (!idea) throw new NotFoundException('Idea not found');
+    if (idea.founderId !== founderId) throw new ForbiddenException('Access denied');
+
+    const clean = (assumptions || [])
+      .filter((a) => a?.statement?.trim())
+      .map((a) => ({ statement: a.statement.trim(), category: a.category || null }));
+
+    await this.prisma.idea.update({ where: { id: ideaId }, data: { assumptions: JSON.stringify(clean) } });
+    return { assumptions: clean };
+  }
+
   // ---------- percentile benchmarking ----------
 
   // The 7 relations that feed the overall score — the only data the

@@ -16,6 +16,8 @@ import { parseAiSummary, toSentences, splitBoldRuns } from '@/lib/parseAiSummary
 import ValidationProgress, { ProgressStep } from '@/components/founder/ValidationProgress';
 import ValidationGapCard from '@/components/founder/ValidationGapCard';
 import { detectValidationGap } from '@/lib/validationGap';
+import AssumptionCheckCard from '@/components/founder/AssumptionCheckCard';
+import type { Assumption } from '@/lib/assumptionCheck';
 import ScoreBreakdown from '@/components/founder/ScoreBreakdown';
 import ShareIdeaModal from '@/components/founder/ShareIdeaModal';
 import VersionTimeline, { IdeaVersion } from '@/components/founder/VersionTimeline';
@@ -62,6 +64,7 @@ export default function IdeaDashboardPage() {
   const [share, setShare] = useState<{ publicId: string | null; publicShareEnabled: boolean; publicShareSettings: any } | null>(null);
   const [viewMode, setViewMode] = useState(false);
   const [benchmark, setBenchmark] = useState<any>(null);
+  const [assumptionList, setAssumptionList] = useState<Assumption[]>([]);
 
   useEffect(() => {
     const user = getStoredUser();
@@ -73,6 +76,10 @@ export default function IdeaDashboardPage() {
         setData(d);
         // Stored AI summary renders instantly; the button becomes "Regenerate".
         if (d?.idea?.aiSummary) setAiSummary(d.idea.aiSummary);
+        try {
+          const asm = JSON.parse(d?.idea?.assumptions || '[]');
+          if (Array.isArray(asm)) setAssumptionList(asm.filter((x: any) => x?.statement));
+        } catch { /* corrupt JSON reads as no assumptions */ }
         if (d?.idea) {
           setShare({
             publicId: d.idea.publicId ?? null,
@@ -502,6 +509,17 @@ export default function IdeaDashboardPage() {
             <p className="text-amber-700 font-medium">No validations received yet. Check back later!</p>
           </div>
           {gapFinding && <ValidationGapCard finding={gapFinding} ideaId={idea?.id} />}
+          {idea && (
+            <AssumptionCheckCard
+              ideaId={idea.id}
+              assumptions={assumptionList}
+              aggregated={a}
+              surveyAnalytics={surveyAnalytics}
+              gapKey={gapFinding?.key}
+              readOnly={viewMode}
+              onSaved={setAssumptionList}
+            />
+          )}
         </>
       )}
 
@@ -540,6 +558,17 @@ export default function IdeaDashboardPage() {
           {/* The score says how validated the idea is; this says what still
               needs proving — first thing under the score by design. */}
           {gapFinding && <ValidationGapCard finding={gapFinding} ideaId={idea?.id} />}
+          {idea && (
+            <AssumptionCheckCard
+              ideaId={idea.id}
+              assumptions={assumptionList}
+              aggregated={a}
+              surveyAnalytics={surveyAnalytics}
+              gapKey={gapFinding?.key}
+              readOnly={viewMode}
+              onSaved={setAssumptionList}
+            />
+          )}
 
           <ScoreBreakdown aggregated={a} />
 

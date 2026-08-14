@@ -5,6 +5,8 @@ import { api } from '@/lib/api';
 import { getStoredUser, isViewMode } from '@/lib/auth';
 import ScoreSelector from '@/components/ScoreSelector';
 import { FieldErrors, fieldClass, isUrl, requireText, scrollToFirstError, summaryMessage } from '@/lib/formValidation';
+import { AssumptionEditor } from '@/components/founder/AssumptionCheckCard';
+import type { Assumption } from '@/lib/assumptionCheck';
 
 const STAGES = ['IDEA', 'RESEARCH', 'PROTOTYPE', 'MVP', 'REVENUE_GENERATING'];
 const INDUSTRIES = ['Technology', 'Healthcare', 'Finance', 'Education', 'E-commerce',
@@ -105,11 +107,18 @@ function SubmitIdeaInner() {
   };
 
   const [viewMode, setViewMode] = useState(false);
+  // Assumption Checker — entirely optional; empty array is a normal submission.
+  const [assumptions, setAssumptions] = useState<Assumption[]>([]);
+  const [assumptionEditorOpen, setAssumptionEditorOpen] = useState(false);
+  // The fee is charged server-side from IDEA_SUBMISSION_FEE — this display
+  // reads the same config so the screen can never show a different number.
+  const [fee, setFee] = useState<number | null>(null);
 
   useEffect(() => {
     const user = getStoredUser();
     if (!user || user.role !== 'FOUNDER') router.push('/auth/login');
     setViewMode(isViewMode());
+    api.getPaymentConfig().then((c) => setFee(Number(c.fee) || null)).catch(() => {});
   }, []);
 
   // Prefill the whole form from the idea being revised — the founder edits
@@ -133,6 +142,10 @@ function SubmitIdeaInner() {
           const team = JSON.parse(original.teamMembers || '[]');
           if (Array.isArray(team) && team.length) setTeamMembers(team);
         } catch { /* keep the empty row */ }
+        try {
+          const asm = JSON.parse(original.assumptions || '[]');
+          if (Array.isArray(asm)) setAssumptions(asm.filter((x: any) => x?.statement));
+        } catch { /* no assumptions */ }
         if (original.selfAssessment) {
           const sa = original.selfAssessment;
           setAssessment({
@@ -153,7 +166,7 @@ function SubmitIdeaInner() {
     setLoading(true);
     try {
       const cleanTeam = teamMembers.filter(m => m.name.trim() && m.linkedinUrl.trim());
-      const payload = { ...idea, teamMembers: cleanTeam, selfAssessment: assessment };
+      const payload = { ...idea, teamMembers: cleanTeam, selfAssessment: assessment, assumptions };
       const res = reviseIdeaId
         ? await api.reviseIdea(reviseIdeaId, payload)
         : await api.createIdea(payload);
@@ -338,6 +351,33 @@ function SubmitIdeaInner() {
           <SliderField label="Network Access" field="networkAccess" />
           <SliderField label="Passion / Interest" field="passion" />
           <SliderField label="Skill Alignment" field="skillAlignment" />
+
+          {/* Assumption Checker — entirely optional. Skipping is a first-class
+              choice, not a validation error. */}
+          <div className="border-t border-slate-100 mt-6 pt-6">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Define Your Assumptions <span className="text-xs font-normal text-slate-400">(optional)</span></h3>
+                <p className="text-xs text-slate-500 mt-0.5 max-w-md">
+                  List things you believe must be true for your idea to succeed. We&apos;ll test these beliefs against your validation evidence.
+                </p>
+              </div>
+              <button type="button" onClick={() => setAssumptionEditorOpen(true)}
+                className="text-xs bg-white border border-blue-200 text-blue-700 px-3 py-1.5 rounded-lg font-semibold hover:bg-blue-50 shrink-0">
+                {assumptions.length ? `Edit assumptions (${assumptions.length})` : '+ Add Assumptions'}
+              </button>
+            </div>
+            {assumptions.length > 0 ? (
+              <ul className="mt-3 space-y-1">
+                {assumptions.map((asm, i) => (
+                  <li key={i} className="text-xs text-slate-600 flex gap-1.5"><span className="text-slate-300">•</span>“{asm.statement}”</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[11px] text-slate-400 mt-2">Skip for now — you can also add assumptions later from your idea&apos;s dashboard.</p>
+            )}
+          </div>
+
           <div className="flex gap-3 mt-6">
             <button type="button" onClick={() => setStep('idea')}
               className="flex-1 border border-slate-300 text-slate-700 py-2.5 rounded-lg font-semibold hover:bg-slate-50">Back</button>
@@ -349,6 +389,16 @@ function SubmitIdeaInner() {
         </form>
       )}
 
+      {assumptionEditorOpen && (
+        <AssumptionEditor
+          initial={assumptions}
+          draftMode
+          draft={idea}
+          onDraftChange={setAssumptions}
+          onClose={() => setAssumptionEditorOpen(false)}
+        />
+      )}
+
       {/* Step 3: Payment */}
       {step === 'payment' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-center">
@@ -356,8 +406,15 @@ function SubmitIdeaInner() {
           <h2 className="text-xl font-bold text-slate-900 mb-2">Complete Payment</h2>
           <p className="text-slate-500 mb-6">A small fee is charged to publish your idea for validation.</p>
           <div className="bg-slate-50 rounded-xl p-6 mb-6 inline-block">
-            <div className="text-3xl font-black text-slate-900">$9.99</div>
-            <div className="text-sm text-slate-500 mt-1">One-time submission fee</div>
+            <div className="text-3xl font-black text-slate-900">
+              {/* Fee is stored in cents (2999 = $29.99), matching Payment.currency USD. */}
+              {fee != null
+                ? `$${((reviseIdeaId ? Math.round(fee * 0.4) : fee) / 100).toFixed(2)}`
+                : '…'}
+            </div>
+            <div className="text-sm text-slate-500 mt-1">
+              {reviseIdeaId ? 'Revision fee — 60% off the standard submission' : 'One-time submission fee'}
+            </div>
           </div>
           <p className="text-xs text-slate-500 mb-6">Currently in test mode — payment is simulated for demo purposes.</p>
           <button onClick={completePayment} disabled={loading}
