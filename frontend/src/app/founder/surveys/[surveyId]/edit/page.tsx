@@ -110,6 +110,7 @@ function SurveyBuilderInner() {
       description: survey.description,
       responseLimit: survey.responseLimit,
       collectEmail: survey.collectEmail,
+      focusMode: survey.focusMode,
       questions: survey.questions.map((q) => ({
         id: q.id,
         type: q.type,
@@ -509,6 +510,34 @@ function SurveyBuilderInner() {
                   </span>
                 </label>
               </div>
+            </div>
+
+            {/* Focus Mode — optional distraction-reduction, never a lock.
+                Fullscreen is invited on the respondent's own click; leaving is
+                always possible and only ever *recorded*, never punished. */}
+            <div className="pt-4 mt-2 border-t border-slate-100">
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={survey.focusMode}
+                  onChange={(e) => setSurvey({ ...survey, focusMode: e.target.checked })}
+                  className="accent-blue-600 mt-0.5"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-slate-800">🔒 Focus Mode</span>
+                  <span className="block text-xs text-slate-500 mt-0.5">
+                    Respondents are asked to take the survey in fullscreen. Interruptions (leaving fullscreen or
+                    switching tabs) are recorded and shown in your analytics.
+                  </span>
+                </span>
+              </label>
+              {survey.focusMode && (
+                <p className="text-xs text-slate-400 mt-2 ml-6">
+                  Focus Mode uses the browser&apos;s Fullscreen API. Respondents can leave fullscreen at any time —
+                  it cannot be prevented — but the platform detects and reports interruptions. On devices without
+                  fullscreen support (e.g. iPhones), the survey still works and tab switches are still detected.
+                </p>
+              )}
             </div>
           </div>
 

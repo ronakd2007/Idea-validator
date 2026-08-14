@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { PublicSurvey, publicSurveyFromServer } from '@/lib/surveyTypes';
@@ -44,6 +44,16 @@ export default function PublicSurveyPage() {
   const [googleEmail, setGoogleEmail] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  // Focus Mode: fullscreen is only ever *invited* on the respondent's own
+  // click and leaving is always possible — interruptions are recorded
+  // (type + time + time away only), never punished and never a lock.
+  const [focusStarted, setFocusStarted] = useState(false);
+  const [focusInterrupted, setFocusInterrupted] = useState(false);
+  const pendingFocusRef = useRef<{ type: string; at: string; awaySec?: number }[]>([]);
+  const focusFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const awaySinceRef = useRef<number | null>(null);
+  const suppressFsExitRef = useRef(false); // our own exitFullscreen() after submit is not an interruption
+  const fsOptOutRef = useRef(false); // respondent chose "continue without fullscreen"
   const [incentiveName, setIncentiveName] = useState('');
   const [incentiveContact, setIncentiveContact] = useState('');
   const [incentiveEntrySubmitted, setIncentiveEntrySubmitted] = useState(false);
@@ -122,6 +132,111 @@ export default function PublicSurveyPage() {
     return () => clearTimeout(t);
   }, [answers, sessionToken, state, survey, publicId]);
 
+  // ---------- Focus Mode ----------
+
+  const fullscreenAvailable =
+    typeof document !== 'undefined' && !!(document.documentElement as any).requestFullscreen;
+
+  // Batched fire-and-forget sends: the respondent's flow must never block or
+  // error because of interruption telemetry.
+  const flushFocusEvents = () => {
+    if (focusFlushTimerRef.current) {
+      clearTimeout(focusFlushTimerRef.current);
+      focusFlushTimerRef.current = null;
+    }
+    if (!pendingFocusRef.current.length || !sessionToken) return Promise.resolve();
+    const batch = pendingFocusRef.current.splice(0);
+    return api.recordFocusEvents(publicId, sessionToken, batch).catch(() => {});
+  };
+
+  const queueFocusEvent = (type: string, awaySec?: number) => {
+    const ev: { type: string; at: string; awaySec?: number } = { type, at: new Date().toISOString() };
+    if (awaySec !== undefined) ev.awaySec = Math.max(0, Math.round(awaySec));
+    pendingFocusRef.current.push(ev);
+    if (focusFlushTimerRef.current) clearTimeout(focusFlushTimerRef.current);
+    focusFlushTimerRef.current = setTimeout(() => { flushFocusEvents(); }, 1500);
+  };
+
+  // One RETURNED per away-period, no matter how many leave signals fired
+  // (exiting fullscreen by switching tabs fires both events).
+  const recordFocusReturn = () => {
+    if (awaySinceRef.current == null) return;
+    queueFocusEvent('RETURNED', (Date.now() - awaySinceRef.current) / 1000);
+    awaySinceRef.current = null;
+  };
+
+  useEffect(() => {
+    if (!survey?.focusMode || state !== 'ready' || !focusStarted) return;
+
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        // Our own programmatic exit after submit must not count as an interruption.
+        if (suppressFsExitRef.current) {
+          suppressFsExitRef.current = false;
+          return;
+        }
+        queueFocusEvent('FULLSCREEN_EXIT');
+        if (awaySinceRef.current == null) awaySinceRef.current = Date.now();
+        if (!fsOptOutRef.current) setFocusInterrupted(true);
+      } else {
+        recordFocusReturn();
+        setFocusInterrupted(false);
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        queueFocusEvent('TAB_HIDDEN');
+        if (awaySinceRef.current == null) awaySinceRef.current = Date.now();
+      } else if (!fullscreenAvailable || document.fullscreenElement || fsOptOutRef.current) {
+        // Back on the tab and fully present again. When fullscreen was exited
+        // too, the interruption overlay handles the return instead.
+        recordFocusReturn();
+      }
+    };
+
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [survey?.focusMode, state, focusStarted, sessionToken]);
+
+  // Fullscreen may only be requested from a user gesture — this runs directly
+  // in the Start Survey click handler. A denied/unsupported request never
+  // blocks the survey: it simply starts windowed with visibility tracking on.
+  const startFocusSurvey = async () => {
+    try {
+      if (fullscreenAvailable) await document.documentElement.requestFullscreen();
+    } catch {
+      // fullscreen refused — proceed anyway, never a lock
+    }
+    setFocusStarted(true);
+  };
+
+  const returnToSurvey = async () => {
+    try {
+      if (fullscreenAvailable && !document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+        return; // fullscreenchange handler records the return + clears overlay
+      }
+    } catch {
+      // fall through to windowed continue
+    }
+    recordFocusReturn();
+    setFocusInterrupted(false);
+  };
+
+  const continueWithoutFullscreen = () => {
+    fsOptOutRef.current = true;
+    recordFocusReturn();
+    setFocusInterrupted(false);
+  };
+
+  // ---------- answers & submit ----------
+
   const setAnswer = (questionId: string, value: any) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
     setErrors((prev) => {
@@ -165,6 +280,9 @@ export default function PublicSurveyPage() {
 
     setSubmitting(true);
     setSubmitError('');
+    // Flush any buffered interruption events while the session is still open —
+    // best-effort, a failure here never blocks the actual submission.
+    if (survey.focusMode) await flushFocusEvents();
     try {
       await api.submitPublicSurveyResponse(publicId, {
         sessionToken,
@@ -195,6 +313,17 @@ export default function PublicSurveyPage() {
       }
     } finally {
       setSubmitting(false);
+      // Always release fullscreen once submission concludes — success or error —
+      // and never count our own exit as an interruption.
+      if (survey.focusMode && typeof document !== 'undefined' && document.fullscreenElement) {
+        suppressFsExitRef.current = true;
+        setFocusInterrupted(false);
+        try {
+          await document.exitFullscreen();
+        } catch {
+          suppressFsExitRef.current = false;
+        }
+      }
     }
   };
 
@@ -291,8 +420,66 @@ export default function PublicSurveyPage() {
 
   if (!survey) return null;
 
+  // Focus Mode pre-start screen: the respondent is told exactly what happens
+  // (fullscreen invite + interruption detection) BEFORE anything starts, and
+  // fullscreen is requested only from their own click on Start Survey.
+  if (survey.focusMode && !focusStarted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f8fafc] px-4 py-12">
+        <div className="max-w-md w-full bg-white border border-slate-200 rounded-xl shadow-sm p-6 sm:p-8 text-center">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">{survey.title}</h1>
+          {survey.description && <p className="text-sm text-slate-600 mb-2">{survey.description}</p>}
+          <p className="text-xs text-slate-400 mb-6">~{estimateMinutes} minute{estimateMinutes !== 1 ? 's' : ''}</p>
+
+          <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-left mb-6">
+            <p className="text-sm font-semibold text-blue-900 mb-1">🔒 This survey uses Focus Mode</p>
+            <p className="text-xs text-blue-800 leading-relaxed">
+              {fullscreenAvailable
+                ? 'The survey will open in fullscreen to help you focus. You can leave fullscreen at any time, but switching away or exiting is recorded as an interruption for the survey creator.'
+                : 'Your device does not support fullscreen, so the survey opens normally — switching to another tab or app is still recorded as an interruption for the survey creator.'}
+            </p>
+            <p className="text-[11px] text-blue-700/80 mt-2">
+              Only the interruption type and timing are recorded — never your screen, keystrokes, camera, or anything else.
+            </p>
+          </div>
+
+          <button
+            onClick={startFocusSurvey}
+            className="w-full bg-blue-600 text-white py-3 rounded-lg text-base font-semibold hover:bg-blue-700 transition"
+          >
+            Start Survey
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#f8fafc] px-4 py-8 sm:py-12">
+      {/* Interruption overlay — an invitation back, never a lock: continuing
+          without fullscreen is always one click away. */}
+      {survey.focusMode && focusInterrupted && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 flex items-center justify-center px-4">
+          <div className="max-w-sm w-full bg-white rounded-xl shadow-xl p-6 text-center">
+            <p className="text-lg font-semibold text-slate-900 mb-1">⚠️ Survey Interrupted</p>
+            <p className="text-sm text-slate-500 mb-5">
+              You left fullscreen. Your answers are safe — return to fullscreen to keep going.
+            </p>
+            <button
+              onClick={returnToSurvey}
+              className="w-full bg-blue-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition"
+            >
+              Return to Survey
+            </button>
+            <button
+              onClick={continueWithoutFullscreen}
+              className="w-full mt-2 text-xs text-slate-400 hover:text-slate-600 py-1.5"
+            >
+              Continue without fullscreen
+            </button>
+          </div>
+        </div>
+      )}
       <div className="max-w-xl mx-auto">
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 sm:p-8 mb-6 text-center">
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">{survey.title}</h1>

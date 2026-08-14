@@ -82,7 +82,7 @@ export class SurveyService {
     const existing = await this.findOwned(id, founderId);
     if (existing.status !== 'DRAFT') throw new ForbiddenException('Cannot edit a survey that is not a draft');
 
-    const { title, description, questions, responseLimit, collectEmail } = data;
+    const { title, description, questions, responseLimit, collectEmail, focusMode } = data;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.survey.update({
@@ -92,6 +92,7 @@ export class SurveyService {
           ...(description !== undefined ? { description } : {}),
           ...(responseLimit !== undefined ? { responseLimit: responseLimit === null || responseLimit === '' ? null : Number(responseLimit) } : {}),
           ...(collectEmail !== undefined ? { collectEmail: !!collectEmail } : {}),
+          ...(focusMode !== undefined ? { focusMode: !!focusMode } : {}),
         },
       });
 
@@ -255,6 +256,7 @@ export class SurveyService {
           description: source.description,
           responseLimit: source.responseLimit,
           collectEmail: source.collectEmail,
+          focusMode: source.focusMode,
           rootSurveyId: rootId,
           versionNumber: nextVersion,
         },

@@ -326,6 +326,10 @@ model Survey {
   publicId      String?   @unique // set on publish; non-guessable, safe to share, never the internal cuid
   responseLimit Int?
   collectEmail  Boolean   @default(false) // optional self-reported email field on the public form — not a verified/authenticated identity
+  // Focus Mode: respondents are invited into browser fullscreen and
+  // interruptions (fullscreen exit / tab hidden) are recorded on the session.
+  // A distraction-reduction nudge, never a lock — OFF by default.
+  focusMode     Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -397,6 +401,10 @@ model SurveySession {
   lastQuestionIndex Int       @default(0) // highest question index reached — the basis for Phase 3 drop-off analysis
   submittedAt       DateTime?
   completed         Boolean   @default(false)
+  // Focus Mode interruption log — JSON array of whitelisted events only:
+  // { type: FULLSCREEN_EXIT | TAB_HIDDEN | RETURNED, at, awaySec? }.
+  // Never screenshots/keystrokes/anything beyond these browser signals.
+  focusEvents       String    @default("[]")
 
   response SurveyResponse?
 

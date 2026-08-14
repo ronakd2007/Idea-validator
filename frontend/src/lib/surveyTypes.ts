@@ -72,6 +72,7 @@ export interface SurveyDraft {
   publicId?: string | null;
   responseLimit?: number | null;
   collectEmail: boolean;
+  focusMode: boolean;
   questions: QuestionDraft[];
   rootSurveyId?: string | null;
   versionNumber: number;
@@ -85,6 +86,7 @@ export interface PublicSurvey {
   description: string;
   status: string;
   collectEmail: boolean;
+  focusMode: boolean;
   limitReached: boolean;
   questions: QuestionDraft[];
   incentive: (IncentiveDraft & { collectContact: boolean }) | null;
@@ -192,6 +194,7 @@ export function surveyFromServer(s: any): SurveyDraft {
     publicId: s.publicId ?? null,
     responseLimit: s.responseLimit ?? null,
     collectEmail: !!s.collectEmail,
+    focusMode: !!s.focusMode,
     rootSurveyId: s.rootSurveyId ?? null,
     versionNumber: s.versionNumber ?? 1,
     incentive: s.incentive ? incentiveFromServer(s.incentive) : null,
@@ -238,6 +241,7 @@ export function publicSurveyFromServer(s: any): PublicSurvey {
     description: s.description || '',
     status: s.status || 'LIVE',
     collectEmail: !!s.collectEmail,
+    focusMode: !!s.focusMode,
     limitReached: !!s.limitReached,
     incentive: s.incentive ? { ...incentiveFromServer(s.incentive), collectContact: !!s.incentive.collectContact } : null,
     questions: (s.questions || []).map((q: any) => ({

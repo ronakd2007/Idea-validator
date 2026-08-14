@@ -161,7 +161,7 @@ export default function SurveyAnalyticsPage() {
   if (loading && !data) return <div className="flex items-center justify-center min-h-screen"><div className="text-slate-500">Loading analytics...</div></div>;
   if (error || !data) return <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error || 'Not found'}</div></div>;
 
-  const { survey, summary, trend, activity, time, questions, dropOff, quality, eligibleOutcomeQuestions, eligibleSegmentQuestions, segmentation, impact, abResults, insights, sampleSizeLabel } = data;
+  const { survey, summary, trend, activity, time, questions, dropOff, quality, eligibleOutcomeQuestions, eligibleSegmentQuestions, segmentation, impact, abResults, insights, sampleSizeLabel, focus } = data;
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
@@ -273,6 +273,57 @@ export default function SurveyAnalyticsPage() {
           </div>
         </div>
       </div>
+
+      {/* Focus Mode — only rendered when the survey has it enabled; counts
+          describe sessions, never verdicts on individual respondents. */}
+      {focus && (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mb-6">
+          <h3 className="font-semibold text-slate-900 mb-1">🔒 Focus Mode</h3>
+          <p className="text-xs text-slate-500 mb-4">
+            Interruptions are moments a respondent left fullscreen or switched tabs. They are informational only —
+            no response is disqualified or hidden because of them.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+            <div>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums">
+                {focus.interruptedSessions}
+                <span className="text-sm font-semibold text-slate-400"> / {focus.trackedSessions}</span>
+              </p>
+              <p className="text-xs text-slate-500 mt-0.5">Sessions interrupted{focus.interruptedPct != null ? ` (${focus.interruptedPct.toFixed(0)}%)` : ''}</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums">{focus.fullscreenExits}</p>
+              <p className="text-xs text-slate-500 mt-0.5">Fullscreen exits</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums">{focus.tabHidden}</p>
+              <p className="text-xs text-slate-500 mt-0.5">Tab switches</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums">
+                {focus.avgAwaySeconds != null ? `${Math.round(focus.avgAwaySeconds)}s` : 'N/A'}
+              </p>
+              <p className="text-xs text-slate-500 mt-0.5">Avg. time away</p>
+            </div>
+          </div>
+          {(focus.completionAmongInterrupted != null || focus.completionAmongUninterrupted != null) && (
+            <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap gap-x-8 gap-y-1 text-sm">
+              <span className="text-slate-500">
+                Completion when interrupted:{' '}
+                <span className="font-semibold text-slate-900">
+                  {focus.completionAmongInterrupted != null ? `${focus.completionAmongInterrupted.toFixed(0)}%` : 'N/A'}
+                </span>
+              </span>
+              <span className="text-slate-500">
+                Without interruptions:{' '}
+                <span className="font-semibold text-slate-900">
+                  {focus.completionAmongUninterrupted != null ? `${focus.completionAmongUninterrupted.toFixed(0)}%` : 'N/A'}
+                </span>
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Response Quality */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mb-6">

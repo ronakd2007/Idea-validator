@@ -309,6 +309,65 @@ export class SurveyAnalyticsService {
     return { ...base, isText: true };
   }
 
+  // ---------- focus mode ----------
+
+  private parseFocusEvents(session: any): any[] {
+    try {
+      const parsed = JSON.parse(session?.focusEvents || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private countInterruptions(session: any): number {
+    return this.parseFocusEvents(session).filter((e) => e.type === 'FULLSCREEN_EXIT' || e.type === 'TAB_HIDDEN').length;
+  }
+
+  /**
+   * Aggregated Focus Mode picture, computed live from session event logs —
+   * nothing here is ever a verdict on any individual respondent, only counts.
+   */
+  private computeFocus(sessions: any[]) {
+    const tracked = sessions.length;
+    let interrupted = 0;
+    let fullscreenExits = 0;
+    let tabHidden = 0;
+    const awaySecs: number[] = [];
+    let interruptedCompleted = 0;
+    let cleanCompleted = 0;
+
+    for (const s of sessions) {
+      const events = this.parseFocusEvents(s);
+      const exits = events.filter((e) => e.type === 'FULLSCREEN_EXIT').length;
+      const hides = events.filter((e) => e.type === 'TAB_HIDDEN').length;
+      fullscreenExits += exits;
+      tabHidden += hides;
+      events.forEach((e) => {
+        if (e.type === 'RETURNED' && typeof e.awaySec === 'number') awaySecs.push(e.awaySec);
+      });
+      if (exits + hides > 0) {
+        interrupted++;
+        if (s.completed) interruptedCompleted++;
+      } else if (s.completed) {
+        cleanCompleted++;
+      }
+    }
+
+    const clean = tracked - interrupted;
+    return {
+      enabled: true,
+      trackedSessions: tracked,
+      interruptedSessions: interrupted,
+      interruptedPct: tracked ? (interrupted / tracked) * 100 : null,
+      fullscreenExits,
+      tabHidden,
+      avgAwaySeconds: this.avg(awaySecs),
+      completionAmongInterrupted: interrupted ? (interruptedCompleted / interrupted) * 100 : null,
+      completionAmongUninterrupted: clean ? (cleanCompleted / clean) * 100 : null,
+    };
+  }
+
   // ---------- drop-off ----------
 
   private computeDropOff(questions: any[], sessions: any[]) {
@@ -606,6 +665,9 @@ export class SurveyAnalyticsService {
       impact,
       abResults,
       insights,
+      // null (not a zeroed object) when Focus Mode is off, so the analytics
+      // page for existing surveys renders byte-for-byte as before.
+      focus: survey.focusMode ? this.computeFocus(sessions) : null,
       sampleSizeLabel: this.sampleSizeLabel(responses.length),
     };
   }
@@ -646,6 +708,7 @@ export class SurveyAnalyticsService {
       respondentEmailVerified: (r as any).respondentEmailVerified ?? false,
       duration: r.session ? this.durationSeconds(r.session) : null,
       quality: r.quality,
+      focusInterruptions: survey.focusMode && r.session ? this.countInterruptions(r.session) : null,
       answers: r.answers.map((a: any) => ({ questionId: a.questionId, value: a.value })),
     }));
 

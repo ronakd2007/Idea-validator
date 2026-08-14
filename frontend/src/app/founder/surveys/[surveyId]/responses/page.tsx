@@ -158,6 +158,21 @@ function SurveyResponsesInner() {
                   <div><p className="text-xs text-slate-500">Duration</p><p className="text-sm font-medium text-slate-900">{formatDuration(selected.duration)}</p></div>
                 </div>
 
+                {/* Focus Mode context (only present when the survey has it on) —
+                    a neutral count, deliberately not styled as a warning. */}
+                {selected.focusInterruptions != null && (
+                  <p className="text-xs text-slate-500 mb-4">
+                    🔒 Focus Mode:{' '}
+                    {selected.focusInterruptions === 0 ? (
+                      <span className="text-slate-700">no interruptions detected</span>
+                    ) : (
+                      <span className="text-slate-700">
+                        {selected.focusInterruptions} interruption{selected.focusInterruptions !== 1 ? 's' : ''} (left fullscreen or switched tabs)
+                      </span>
+                    )}
+                  </p>
+                )}
+
                 {selected.respondentEmail && (
                   <p className="text-xs text-slate-500 mb-4">
                     Respondent email: <span className="text-slate-700">{selected.respondentEmail}</span>
