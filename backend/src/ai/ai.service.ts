@@ -241,6 +241,162 @@ NEXT STEPS
     return { summary, generatedAt, cached: false };
   }
 
+  // ---------- gap-to-survey generator ----------
+
+  // Question archetypes per validation gap. The model adapts these to the
+  // specific idea — it decides wording, never the research methodology.
+  private static readonly GAP_PLAYBOOKS: Record<string, { label: string; goal: string; archetypes: string[] }> = {
+    PRICING: {
+      label: 'Willingness to Pay',
+      goal: 'find out whether target customers would actually pay, at what price, and what blocks them from paying',
+      archetypes: [
+        'Would you pay for a solution to this problem? (YES_NO)',
+        'What is the most you would pay per month for this? (MULTIPLE_CHOICE with realistic price brackets for this product category)',
+        'At what price would this feel too expensive to consider? (SHORT_ANSWER)',
+        'What would make this worth paying for? (PARAGRAPH)',
+        'How do you solve this problem today, and does it cost you anything? (PARAGRAPH)',
+        'How disappointed would you be if this product did not exist? (MULTIPLE_CHOICE: Very / Somewhat / Not disappointed)',
+      ],
+    },
+    REVENUE_POTENTIAL: { label: 'Willingness to Pay', goal: 'test whether real customers would pay and what pricing model fits', archetypes: [
+      'Would you pay for this? (YES_NO)',
+      'Which pricing model would you prefer? (MULTIPLE_CHOICE: monthly subscription / yearly / one-time / free with paid extras)',
+      'What is the most you would pay? (MULTIPLE_CHOICE with price brackets)',
+      'What would stop you from paying for this? (PARAGRAPH)',
+    ]},
+    CUSTOMER_DEMAND: {
+      label: 'Customer Demand',
+      goal: 'test whether the core problem matters to people and whether they want this solution',
+      archetypes: [
+        'How often do you experience this problem? (MULTIPLE_CHOICE: Never / Rarely / Monthly / Weekly / Daily)',
+        'How do you deal with it today? (SHORT_ANSWER)',
+        'How painful is this problem for you? (RATING max 5)',
+        'Would you use this product if it existed? (YES_NO)',
+        'What almost-solution have you tried and abandoned? (PARAGRAPH)',
+      ],
+    },
+    DIFFERENTIATION: {
+      label: 'Differentiation',
+      goal: 'learn what alternatives people use and whether this idea is meaningfully better',
+      archetypes: [
+        'What do you currently use to solve this problem? (SHORT_ANSWER)',
+        'What do you like most about your current solution? (PARAGRAPH)',
+        'What frustrates you most about it? (PARAGRAPH)',
+        'How likely would you be to switch to a new solution? (LINEAR_SCALE 1-10)',
+        'What would a new product need to do to make you switch? (PARAGRAPH)',
+      ],
+    },
+    MARKET_OPPORTUNITY: {
+      label: 'Problem Severity',
+      goal: 'measure how real, frequent and costly the problem is for the target customer',
+      archetypes: [
+        'Have you experienced this problem in the last month? (YES_NO)',
+        'How often does it happen? (MULTIPLE_CHOICE frequency brackets)',
+        'What does this problem cost you (time, money, stress)? (PARAGRAPH)',
+        'How urgent is solving it for you? (RATING max 5)',
+      ],
+    },
+    RISK_MARKETADOPTION: {
+      label: 'Adoption Barriers',
+      goal: 'uncover what would stop the target customer from adopting this product',
+      archetypes: [
+        'What would stop you from trying a product like this? (PARAGRAPH)',
+        'How do you usually discover new products in this category? (MULTIPLE_CHOICE)',
+        'What would you need to see before trusting it? (PARAGRAPH)',
+        'Would you try this if a friend recommended it? (YES_NO)',
+      ],
+    },
+    DEFAULT: {
+      label: 'Customer Validation',
+      goal: 'test overall demand: problem reality, interest in the solution, and willingness to pay',
+      archetypes: [
+        'How often do you experience this problem? (MULTIPLE_CHOICE frequency brackets)',
+        'How do you solve it today? (SHORT_ANSWER)',
+        'Would you use this product? (YES_NO)',
+        'Would you pay for it? (YES_NO)',
+        'How useful does this sound? (RATING max 5)',
+        'What is the one thing that would make this a must-have for you? (PARAGRAPH)',
+      ],
+    },
+  };
+
+  /**
+   * The Weakness Detector names the gap; this turns it into the survey that
+   * closes it. Same output contract and normalization as the paste-your-
+   * questions builder, so the frontend consumes both identically.
+   */
+  async generateGapSurvey(ideaId: string, founderId: string, gapKey: string) {
+    const idea = await this.prisma.idea.findUnique({
+      where: { id: ideaId },
+      select: { id: true, founderId: true, title: true, industryCategory: true, problemStatement: true, solutionDescription: true, targetCustomer: true },
+    });
+    if (!idea) throw new NotFoundException('Idea not found');
+    if (idea.founderId !== founderId) throw new ForbiddenException('Access denied');
+
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) throw new ServiceUnavailableException('Groq API key not configured');
+
+    const playbook = AiService.GAP_PLAYBOOKS[(gapKey || '').toUpperCase()] || AiService.GAP_PLAYBOOKS.DEFAULT;
+
+    const prompt = `You are the survey engine of a startup-validation product. A founder's idea has one specific validation gap, and you must produce the customer survey that closes it.
+
+THE IDEA
+Title: ${idea.title}
+Industry: ${idea.industryCategory}
+Problem: ${idea.problemStatement}
+Solution: ${idea.solutionDescription}
+Target customer: ${idea.targetCustomer}
+
+THE GAP TO CLOSE: ${playbook.label}
+Research goal: ${playbook.goal}
+
+QUESTION ARCHETYPES (adapt each to THIS idea's wording and audience; keep the research intent and the suggested type):
+${playbook.archetypes.map((a, i) => `${i + 1}. ${a}`).join('\n')}
+
+RULES
+1. Produce 5 to 8 questions: adapt the archetypes above to this specific idea and audience. You may drop an archetype that doesn't fit and may add ONE extra question if clearly valuable.
+2. Never mention "the idea", "the founder" or "this startup" — phrase questions the way the target customer talks, referring to the product plainly (e.g. "a tool that forecasts restaurant demand").
+3. Question types must be exactly one of: SHORT_ANSWER, PARAGRAPH, MULTIPLE_CHOICE, CHECKBOXES, DROPDOWN, YES_NO, RATING, LINEAR_SCALE.
+4. Only generate options that are common knowledge (frequencies, price brackets sensible for this product category, agreement levels). Never invent brand names or facts.
+5. Keep questions neutral — no leading wording that begs for a yes.
+6. "title": a short survey title naming the product area (not the internal gap label). "description": one sentence for respondents.
+
+Return ONLY a single JSON object, no commentary, matching exactly:
+{
+  "title": string,
+  "description": string,
+  "questions": [
+    { "questionText": string, "type": string, "options": string[], "required": boolean, "min": number, "max": number }
+  ]
+}`;
+
+    const groq = new Groq({ apiKey });
+    let raw: any;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let completion;
+      try {
+        completion = await groq.chat.completions.create({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: attempt === 0 ? prompt : `${prompt}\n\nReturn ONLY the JSON object. No commentary, no markdown fences.` }],
+          temperature: 0.4,
+          max_tokens: 2000,
+          response_format: { type: 'json_object' },
+        });
+      } catch (err) {
+        throw this.toAiError(err);
+      }
+      try {
+        raw = JSON.parse(completion.choices[0]?.message?.content || '{}');
+        break;
+      } catch {
+        if (attempt === 1) throw new ServiceUnavailableException("Couldn't generate the survey — please try again.");
+      }
+    }
+
+    const normalized = this.normalizeGeneratedSurvey(raw, false);
+    return { ...normalized, gapKey: (gapKey || 'DEFAULT').toUpperCase(), gapLabel: playbook.label };
+  }
+
   // Powers the "AI Builder" entry point on the existing survey creation flow —
   // reads pasted/uploaded questions and returns a normalized draft the founder
   // lands in the same survey editor with. This never touches Prisma: text in,

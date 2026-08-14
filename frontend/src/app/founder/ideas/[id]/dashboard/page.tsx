@@ -61,11 +61,13 @@ export default function IdeaDashboardPage() {
   const [shareOpen, setShareOpen] = useState(false);
   const [share, setShare] = useState<{ publicId: string | null; publicShareEnabled: boolean; publicShareSettings: any } | null>(null);
   const [viewMode, setViewMode] = useState(false);
+  const [benchmark, setBenchmark] = useState<any>(null);
 
   useEffect(() => {
     const user = getStoredUser();
     if (!user || user.role !== 'FOUNDER') { router.push('/auth/login'); return; }
     setViewMode(isViewMode());
+    api.getIdeaBenchmark(params.id as string).then(setBenchmark).catch(() => {});
     api.getIdeaDashboard(params.id as string)
       .then((d) => {
         setData(d);
@@ -499,7 +501,7 @@ export default function IdeaDashboardPage() {
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-8 text-center">
             <p className="text-amber-700 font-medium">No validations received yet. Check back later!</p>
           </div>
-          {gapFinding && <ValidationGapCard finding={gapFinding} />}
+          {gapFinding && <ValidationGapCard finding={gapFinding} ideaId={idea?.id} />}
         </>
       )}
 
@@ -513,6 +515,15 @@ export default function IdeaDashboardPage() {
               </div>
               <div className="text-blue-100 text-sm font-medium mt-1">Overall Score</div>
               <div className="mt-3 inline-block text-xs font-semibold bg-white/15 px-3 py-1 rounded-full">{heroStatus.label}</div>
+              {benchmark?.percentile != null && (
+                <div className="mt-3 text-xs text-blue-100">
+                  Scores higher than <span className="font-bold text-white">{benchmark.percentile}%</span> of validated ideas
+                  {benchmark.industryPercentile != null && (
+                    <> · <span className="font-bold text-white">{benchmark.industryPercentile}%</span> in {idea?.industryCategory}</>
+                  )}
+                  <span className="block text-[10px] text-blue-200/80 mt-0.5">compared with {benchmark.cohortSize} validated idea{benchmark.cohortSize !== 1 ? 's' : ''} on this platform</span>
+                </div>
+              )}
             </div>
             <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 flex flex-col items-center justify-center text-center">
               <div className={`text-3xl font-black mb-1 ${TONE_DOM[sh.tone].text}`}>{(a.sharkTankAvg || 0).toFixed(0)}</div>
@@ -528,7 +539,7 @@ export default function IdeaDashboardPage() {
 
           {/* The score says how validated the idea is; this says what still
               needs proving — first thing under the score by design. */}
-          {gapFinding && <ValidationGapCard finding={gapFinding} />}
+          {gapFinding && <ValidationGapCard finding={gapFinding} ideaId={idea?.id} />}
 
           <ScoreBreakdown aggregated={a} />
 

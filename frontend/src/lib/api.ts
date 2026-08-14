@@ -104,6 +104,8 @@ export const api = {
   // AI
   getAiSummary: (ideaId: string, refresh = false) => request(`/ai/summary/${ideaId}${refresh ? '?refresh=true' : ''}`),
   generateSurveyDraft: (rawText: string) => request('/ai/generate-survey', { method: 'POST', body: JSON.stringify({ rawText }) }),
+  generateGapSurvey: (ideaId: string, gapKey: string) => request('/ai/gap-survey', { method: 'POST', body: JSON.stringify({ ideaId, gapKey }) }),
+  getIdeaBenchmark: (id: string) => request(`/ideas/${id}/benchmark`),
 
   // Mass Survey
   createSurvey: (body: { ideaId?: string; title: string; description?: string }) =>

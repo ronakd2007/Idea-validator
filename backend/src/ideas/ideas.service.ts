@@ -501,6 +501,90 @@ export class IdeasService {
    * an explicit whitelist — no idea/validator/founder object is ever spread
    * into the response, so adding DB fields later can't silently leak here.
    */
+  // ---------- percentile benchmarking ----------
+
+  // The 7 relations that feed the overall score — the only data the
+  // benchmark cohort query needs to load per idea.
+  private static readonly SCORE_RELATIONS = {
+    marketOpportunity: true, feasibility: true, founderFit: true, revenuePotential: true,
+    scalability: true, innovation: true, socialImpact: true,
+  } as const;
+
+  /**
+   * Overall score from minimal includes. MUST mirror aggregateScores()'s
+   * normalizedScores math exactly (avg of per-category normalized averages) —
+   * the e2e suite asserts benchmark score === dashboard overallScore so any
+   * divergence fails loudly.
+   */
+  private leanOverallScore(validations: any[]): number | null {
+    if (!validations.length) return null;
+    const sum5 = (obj: any, keys: string[]) => keys.reduce((s, k) => s + (obj[k] || 0), 0);
+    const per = (rel: string, keys: string[]) => {
+      const arr = validations.filter((v) => v[rel]).map((v) => sum5(v[rel], keys));
+      return arr.length ? (this.avg(arr) / 50) * 100 : null;
+    };
+    const parts = [
+      per('marketOpportunity', ['problemSeverity', 'marketSize', 'willingnessToPay', 'marketGrowthRate', 'competitionGap']),
+      per('feasibility', ['technicalComplexity', 'capitalRequirement', 'regulatoryDifficulty', 'talentAvailability', 'timeToLaunch']),
+      per('founderFit', ['industryKnowledge', 'relevantExperience', 'networkAccess', 'passion', 'skillAlignment']),
+      per('revenuePotential', ['pricingPower', 'recurringRevenuePotential', 'profitMarginPotential', 'upsellOpportunities', 'customerLifetimeValue']),
+      per('scalability', ['geographicExpansion', 'automationPotential', 'operationalComplexity', 'dependenceOnFounder', 'networkEffects']),
+      per('innovation', ['uniqueness', 'patentability', 'competitiveAdvantage', 'disruptionPotential', 'defensibility']),
+      per('socialImpact', ['jobCreation', 'environmentalBenefit', 'communityBenefit', 'inclusion', 'sustainability']),
+    ].filter((x): x is number => x != null);
+    return parts.length ? this.avg(parts) : null;
+  }
+
+  /**
+   * Where this idea's score sits among every other validated idea on the
+   * platform. Deterministic, aggregates only — no other founder's idea is
+   * ever identified. Percentiles are withheld below minimum cohort sizes
+   * rather than reported on meaningless samples.
+   */
+  private async computeBenchmark(ideaId: string, industryCategory: string, myScore: number | null) {
+    const MIN_OVERALL = 5;
+    const MIN_INDUSTRY = 3;
+
+    const others = await this.prisma.idea.findMany({
+      where: { id: { not: ideaId }, paymentStatus: 'COMPLETED', validations: { some: {} } },
+      select: {
+        industryCategory: true,
+        validations: { select: { ...IdeasService.SCORE_RELATIONS } },
+      },
+    });
+    const cohort = others
+      .map((o) => ({ industry: o.industryCategory, score: this.leanOverallScore(o.validations) }))
+      .filter((s): s is { industry: string; score: number } => s.score != null);
+
+    const industryCohort = cohort.filter((s) => s.industry === industryCategory);
+    const pct = (group: { score: number }[]) =>
+      myScore == null || !group.length ? null : Math.round((group.filter((s) => s.score < myScore).length / group.length) * 100);
+
+    return {
+      score: myScore != null ? Math.round(myScore) : null,
+      percentile: cohort.length >= MIN_OVERALL ? pct(cohort) : null,
+      cohortSize: cohort.length,
+      industryCategory,
+      industryPercentile: industryCohort.length >= MIN_INDUSTRY ? pct(industryCohort) : null,
+      industryCohortSize: industryCohort.length,
+    };
+  }
+
+  async getBenchmark(ideaId: string, founderId: string) {
+    const idea = await this.prisma.idea.findUnique({
+      where: { id: ideaId },
+      select: {
+        founderId: true,
+        industryCategory: true,
+        validations: { select: { ...IdeasService.SCORE_RELATIONS } },
+      },
+    });
+    if (!idea) throw new NotFoundException('Idea not found');
+    if (idea.founderId !== founderId) throw new ForbiddenException('Access denied');
+
+    return this.computeBenchmark(ideaId, idea.industryCategory, this.leanOverallScore(idea.validations));
+  }
+
   async getPublicIdea(publicId: string) {
     const idea = await this.prisma.idea.findUnique({
       where: { publicId },
@@ -579,6 +663,9 @@ export class IdeasService {
             customerPositivePct: customer?.positivePct ?? null,
             riskLevel,
           }
+        : null,
+      benchmark: settings.showScores
+        ? await this.computeBenchmark(idea.id, idea.industryCategory, this.leanOverallScore(idea.validations))
         : null,
       counts: settings.showCounts
         ? { validators: validationCount, responses: totalResponses }

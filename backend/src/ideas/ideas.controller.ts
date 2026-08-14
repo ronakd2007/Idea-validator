@@ -42,6 +42,14 @@ export class IdeasController {
     return this.ideasService.getVersions(id, req.user.userId);
   }
 
+  // Percentile position among all validated ideas on the platform —
+  // aggregates only, no other founder's idea is ever identified.
+  @Get(':id/benchmark')
+  @Roles('FOUNDER')
+  getBenchmark(@Param('id') id: string, @Request() req) {
+    return this.ideasService.getBenchmark(id, req.user.userId);
+  }
+
   @Post(':id/share')
   @Roles('FOUNDER')
   enableShare(@Param('id') id: string, @Request() req, @Body() body: any) {

@@ -76,6 +76,11 @@ export default function PublicIdeaPage() {
                 <p className="text-5xl font-black text-slate-900 tabular-nums">
                   {scores.overall}<span className="text-xl font-semibold text-slate-300">/100</span>
                 </p>
+                {data.benchmark?.percentile != null && (
+                  <p className="mt-2 inline-block text-[11px] font-semibold bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full">
+                    Scores higher than {data.benchmark.percentile}% of ideas validated on this platform
+                  </p>
+                )}
               </div>
             )}
           </div>

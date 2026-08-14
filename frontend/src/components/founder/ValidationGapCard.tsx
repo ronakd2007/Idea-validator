@@ -27,10 +27,13 @@ const SOURCE_STYLE: Record<string, string> = {
  * you still need to prove." Pure presentation — every number arrives already
  * computed by detectValidationGap from real dashboard data.
  */
-export default function ValidationGapCard({ finding }: { finding: GapFinding }) {
+export default function ValidationGapCard({ finding, ideaId }: { finding: GapFinding; ideaId?: string }) {
   const [showWhy, setShowWhy] = useState(false);
   const tone = TONE_STYLE[finding.tone];
   const conf = CONF_STYLE[finding.confidence];
+  // Gap-to-Survey: when the recommended next step is a survey and we know the
+  // idea, offer to build that survey with AI in one click.
+  const canGenerate = !!ideaId && !!finding.nextStepHref?.startsWith('/founder/surveys/generate');
 
   return (
     <div className={`bg-white border ${tone.border} shadow-sm rounded-xl p-6 mb-6`}>
@@ -54,12 +57,20 @@ export default function ValidationGapCard({ finding }: { finding: GapFinding }) 
           <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">Recommended next step</p>
           <p className="text-sm text-slate-800">
             → {finding.nextStep}
-            {finding.nextStepHref && (
+            {finding.nextStepHref && !canGenerate && (
               <Link href={finding.nextStepHref} className="ml-2 text-blue-600 hover:text-blue-700 font-semibold whitespace-nowrap">
                 Start →
               </Link>
             )}
           </p>
+          {canGenerate && (
+            <Link
+              href={`/founder/surveys/generate?ideaId=${ideaId}&gap=${encodeURIComponent(finding.key)}`}
+              className="inline-flex items-center gap-1.5 mt-2 bg-blue-600 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-700 transition"
+            >
+              ⚡ Generate this survey with AI
+            </Link>
+          )}
         </div>
       </div>
 

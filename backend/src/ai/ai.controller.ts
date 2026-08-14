@@ -23,4 +23,12 @@ export class AiController {
   async generateSurvey(@Body() body: { rawText: string }) {
     return this.aiService.generateSurveyFromText(body.rawText);
   }
+
+  // Gap-to-Survey: the Weakness Detector names the gap, this builds the
+  // survey that closes it — tailored to the founder's own idea.
+  @Post('gap-survey')
+  @Roles('FOUNDER')
+  async generateGapSurvey(@Request() req: any, @Body() body: { ideaId: string; gapKey: string }) {
+    return this.aiService.generateGapSurvey(body.ideaId, req.user.userId, body.gapKey || 'DEFAULT');
+  }
 }
