@@ -50,7 +50,7 @@ export default function FounderIdeasPage() {
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
       <PageHeader
         title="My Ideas"
-        subtitle="Expert validation for each idea you've submitted"
+        subtitle="Every idea you've sent to our experts, and how each one is doing"
         actions={
           <Link href="/founder/submit-idea" className="bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition">
             + Submit New Idea
@@ -64,7 +64,7 @@ export default function FounderIdeasPage() {
         <EmptyState
           icon="💡"
           title="No ideas yet"
-          body="Submit your first idea to get structured feedback from industry experts across 12 frameworks — before you invest serious time or money."
+          body="Send us your idea and real industry experts will score it and tell you what's strong, what's weak, and what to fix — before you spend serious time or money building it."
           action={
             <Link href="/founder/submit-idea" className="inline-block bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition">
               Submit Your First Idea

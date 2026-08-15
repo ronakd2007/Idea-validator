@@ -219,4 +219,89 @@ export const api = {
   },
   getAdminSurveyAnalytics: (id: string) => request(`/admin/surveys/${id}/analytics`),
   getAdminSurveyActivity: (id: string) => request(`/admin/surveys/${id}/activity`),
+
+  // AI Validation Assistant — conversation CRUD. Sending/regenerating a
+  // message goes through streamChatMessage() below instead, since those
+  // responses stream rather than resolving a single JSON body.
+  getIdeaChat: (ideaId: string) => request(`/chat/ideas/${ideaId}`),
+  newIdeaChat: (ideaId: string) => request(`/chat/ideas/${ideaId}/new`, { method: 'POST' }),
+  deleteIdeaChat: (ideaId: string) => request(`/chat/ideas/${ideaId}`, { method: 'DELETE' }),
+  getSurveyChat: (surveyId: string) => request(`/chat/surveys/${surveyId}`),
+  newSurveyChat: (surveyId: string) => request(`/chat/surveys/${surveyId}/new`, { method: 'POST' }),
+  deleteSurveyChat: (surveyId: string) => request(`/chat/surveys/${surveyId}`, { method: 'DELETE' }),
 };
+
+export type ChatReportKind = 'ideas' | 'surveys';
+
+// Streams an assistant reply chunk-by-chunk via fetch's ReadableStream reader
+// (not EventSource — it can't POST or carry an Authorization header). The
+// backend frames each event as a standard SSE `data: {...}\n\n` line; this
+// buffers partial frames across chunk boundaries and dispatches one callback
+// per complete event as it arrives.
+export async function streamChatMessage(
+  kind: ChatReportKind,
+  id: string,
+  options: { content: string } | { regenerate: true },
+  handlers: {
+    onDelta: (text: string) => void;
+    onDone: (messageId: string | null) => void;
+    onError: (message: string) => void;
+  },
+  signal?: AbortSignal
+): Promise<void> {
+  const isRegenerate = 'regenerate' in options && options.regenerate;
+  const path = `/chat/${kind}/${id}/${isRegenerate ? 'regenerate' : 'messages'}`;
+
+  const token = getToken();
+  const headers: HeadersInit = { 'Content-Type': 'application/json' };
+  if (token) (headers as any)['Authorization'] = `Bearer ${token}`;
+  const viewToken = getViewToken(path);
+  if (viewToken) (headers as any)['X-View-As'] = viewToken;
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(isRegenerate ? {} : { content: (options as { content: string }).content }),
+      signal,
+    });
+  } catch (err: any) {
+    if (err.name === 'AbortError') return;
+    handlers.onError('Could not reach the server. Check your connection and try again.');
+    return;
+  }
+
+  if (!res.ok || !res.body) {
+    let message = 'Something went wrong. Please try again.';
+    try { message = (await res.json()).message || message; } catch { /* non-JSON error body */ }
+    handlers.onError(message);
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const frames = buffer.split('\n\n');
+      buffer = frames.pop() || '';
+      for (const frame of frames) {
+        const dataLine = frame.split('\n').find((l) => l.startsWith('data: '));
+        if (!dataLine) continue;
+        let payload: any;
+        try { payload = JSON.parse(dataLine.slice(6)); } catch { continue; }
+        if (payload.type === 'delta') handlers.onDelta(payload.content);
+        else if (payload.type === 'done') handlers.onDone(payload.messageId ?? null);
+        else if (payload.type === 'error') handlers.onError(payload.message || 'Something went wrong.');
+      }
+    }
+  } catch (err: any) {
+    // AbortError means the caller clicked Stop — that's an intentional,
+    // silent end, not a failure to surface.
+    if (err.name !== 'AbortError') handlers.onError('Connection lost while generating a response.');
+  }
+}

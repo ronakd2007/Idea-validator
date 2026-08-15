@@ -47,11 +47,11 @@ export default function AssumptionCheckCard({ ideaId, assumptions, aggregated, s
       <>
         <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-5 mb-6 flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <p className="font-semibold text-slate-900 text-sm">Test your assumptions</p>
-            <p className="text-xs text-slate-500 mt-0.5">Define what you believe must be true, then compare it with real validation evidence.</p>
+            <p className="font-semibold text-slate-900 text-sm">What are you betting on?</p>
+            <p className="text-xs text-slate-500 mt-0.5">Write down what must be true for your idea to work (e.g. &ldquo;people will pay $9/month&rdquo;) — we&apos;ll check each one against your real evidence.</p>
           </div>
           <button onClick={() => setEditing(true)} className="text-sm bg-white border border-blue-200 text-blue-700 px-4 py-2 rounded-lg font-semibold hover:bg-blue-50 shrink-0">
-            + Define assumptions
+            + Add my assumptions
           </button>
         </div>
         {editing && <AssumptionEditor ideaId={ideaId} initial={assumptions} onClose={() => setEditing(false)} onSaved={onSaved} />}
@@ -63,13 +63,14 @@ export default function AssumptionCheckCard({ ideaId, assumptions, aggregated, s
     <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
       <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
         <div>
-          <h3 className="font-semibold text-slate-900">Assumption Checker</h3>
+          <h3 className="font-semibold text-slate-900">What you&apos;re betting on</h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Your beliefs, tested against live evidence — statuses update automatically as responses arrive.
+            The things that must be true for your idea to work. We check each one against your real evidence
+            and update it automatically as new answers come in.
           </p>
         </div>
         {!readOnly && (
-          <button onClick={() => setEditing(true)} className="text-xs text-blue-600 hover:underline font-medium shrink-0">Edit assumptions</button>
+          <button onClick={() => setEditing(true)} className="text-xs text-blue-600 hover:underline font-medium shrink-0">Edit</button>
         )}
       </div>
 

@@ -4,16 +4,16 @@ import Link from 'next/link';
 import type { GapFinding, GapConfidence } from '@/lib/validationGap';
 
 const CONF_STYLE: Record<GapConfidence, { dot: string; text: string; label: string }> = {
-  HIGH: { dot: 'bg-emerald-500', text: 'text-emerald-700', label: 'High' },
-  MEDIUM: { dot: 'bg-blue-500', text: 'text-blue-700', label: 'Medium' },
-  LOW: { dot: 'bg-amber-500', text: 'text-amber-700', label: 'Low' },
-  INSUFFICIENT: { dot: 'bg-slate-400', text: 'text-slate-500', label: 'Insufficient Evidence' },
+  HIGH: { dot: 'bg-emerald-500', text: 'text-emerald-700', label: 'Strong evidence' },
+  MEDIUM: { dot: 'bg-blue-500', text: 'text-blue-700', label: 'Decent evidence' },
+  LOW: { dot: 'bg-amber-500', text: 'text-amber-700', label: 'Weak evidence' },
+  INSUFFICIENT: { dot: 'bg-slate-400', text: 'text-slate-500', label: 'Not enough evidence yet' },
 };
 
 const TONE_STYLE = {
-  gap: { border: 'border-rose-200', chip: 'bg-rose-100 text-rose-700', icon: '🔥', chipLabel: 'BIGGEST VALIDATION GAP' },
-  info: { border: 'border-blue-200', chip: 'bg-blue-100 text-blue-700', icon: 'ℹ', chipLabel: 'VALIDATION GAP' },
-  ok: { border: 'border-emerald-200', chip: 'bg-emerald-100 text-emerald-700', icon: '✓', chipLabel: 'VALIDATION CHECK' },
+  gap: { border: 'border-rose-200', chip: 'bg-rose-100 text-rose-700', icon: '🔥', chipLabel: "THE BIGGEST THING YOU HAVEN'T PROVEN" },
+  info: { border: 'border-blue-200', chip: 'bg-blue-100 text-blue-700', icon: 'ℹ', chipLabel: 'STILL TO PROVE' },
+  ok: { border: 'border-emerald-200', chip: 'bg-emerald-100 text-emerald-700', icon: '✓', chipLabel: 'EVIDENCE CHECK' },
 } as const;
 
 const SOURCE_STYLE: Record<string, string> = {
@@ -47,14 +47,14 @@ export default function ValidationGapCard({ finding, ideaId }: { finding: GapFin
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-4 pt-4 border-t border-slate-100">
         <div>
-          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">Confidence</p>
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">How sure we are</p>
           <p className={`text-sm font-semibold flex items-center gap-1.5 ${conf.text}`}>
             <span className={`w-2 h-2 rounded-full ${conf.dot}`} />{conf.label}
           </p>
           <p className="text-[11px] text-slate-400">{finding.confidenceNote}</p>
         </div>
         <div className="flex-1 min-w-[200px]">
-          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">Recommended next step</p>
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">What to do next</p>
           <p className="text-sm text-slate-800">
             → {finding.nextStep}
             {finding.nextStepHref && !canGenerate && (

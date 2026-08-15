@@ -24,6 +24,7 @@ import VersionTimeline, { IdeaVersion } from '@/components/founder/VersionTimeli
 import StatusBadge, { type BadgeTone } from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/feedback';
+import AIChatPanel from '@/components/chat/AIChatPanel';
 
 // Report tones (positive/warning/critical) → shared badge tones.
 const REPORT_TONE_TO_BADGE: Record<string, BadgeTone> = {
@@ -34,11 +35,11 @@ const REPORT_TONE_TO_BADGE: Record<string, BadgeTone> = {
 
 // The page's content grouped by the question it answers, not by scroll order.
 const TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'scores', label: 'Expert Scores' },
-  { id: 'surveys', label: 'Surveys' },
-  { id: 'insights', label: 'Insights' },
-  { id: 'experts', label: 'Experts & Feedback' },
+  { id: 'overview', label: 'Summary' },
+  { id: 'scores', label: 'The Scores' },
+  { id: 'surveys', label: 'Customer Surveys' },
+  { id: 'insights', label: "What's Missing" },
+  { id: 'experts', label: 'Expert Comments' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
 
@@ -471,23 +472,26 @@ export default function IdeaDashboardPage() {
 
   const evidenceCard = (a.totalValidations > 0 || marketResponseLabel) && (
     <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
-      <h3 className="font-semibold text-slate-900 mb-1">Validation Evidence</h3>
-      <p className="text-xs text-slate-500 mb-4">Two separate evidence sources, shown side by side — deliberately never combined into one score.</p>
+      <h3 className="font-semibold text-slate-900 mb-1">Your two sources of proof</h3>
+      <p className="text-xs text-slate-500 mb-4">
+        Experts judge whether the idea is sound. Real customers tell you whether they actually want it.
+        We keep them separate on purpose — a good idea nobody wants is still a bad business.
+      </p>
       <div className="grid sm:grid-cols-2 gap-4">
         <div className="border border-slate-200 rounded-lg p-4">
-          <p className="text-xs text-slate-500 mb-1">Expert Perspective</p>
+          <p className="text-xs text-slate-500 mb-1">What experts think</p>
           {a.totalValidations > 0 ? (
             <p className={`text-lg font-semibold ${TONE_DOM[heroStatus.tone].text}`}>{heroStatus.label}</p>
           ) : (
-            <p className="text-sm text-slate-400">No expert validations yet</p>
+            <p className="text-sm text-slate-400">No expert has reviewed it yet</p>
           )}
         </div>
         <div className="border border-slate-200 rounded-lg p-4">
-          <p className="text-xs text-slate-500 mb-1">Market Response</p>
+          <p className="text-xs text-slate-500 mb-1">What real customers said</p>
           {marketResponseLabel ? (
             <p className={`text-lg font-semibold ${TONE_DOM[marketResponseLabel.tone].text}`}>{marketResponseLabel.label}</p>
           ) : (
-            <p className="text-sm text-slate-400">Not enough survey responses yet</p>
+            <p className="text-sm text-slate-400">Not enough survey answers yet</p>
           )}
         </div>
       </div>
@@ -616,8 +620,8 @@ export default function IdeaDashboardPage() {
     <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
-          <h3 className="font-semibold text-slate-900">Mass Survey</h3>
-          <p className="text-xs text-slate-500 mt-0.5">Public survey responses — a separate evidence source from Expert Validation</p>
+          <h3 className="font-semibold text-slate-900">Customer Surveys</h3>
+          <p className="text-xs text-slate-500 mt-0.5">Answers from real people you shared your survey link with</p>
         </div>
         <Link href="/founder/surveys" className="text-sm text-blue-600 hover:text-blue-700 font-medium">Manage Surveys &rarr;</Link>
       </div>
@@ -670,7 +674,8 @@ export default function IdeaDashboardPage() {
   );
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+    <div className="flex">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10 flex-1 min-w-0">
       {/* ---------- header: who, how it's doing, what next ---------- */}
       <div className="mb-6">
         <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
@@ -733,31 +738,31 @@ export default function IdeaDashboardPage() {
         {/* Key numbers — the "how is it doing" strip, always visible above the tabs. */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
           <div className="bg-blue-600 text-white rounded-xl p-4">
-            <p className="text-[11px] font-medium text-blue-200 uppercase tracking-wide">Overall Score</p>
+            <p className="text-[11px] font-medium text-blue-200 uppercase tracking-wide">Score out of 100</p>
             <p className="text-2xl font-bold tabular-nums mt-1">
               {expertDone ? <>{(a.overallScore || 0).toFixed(0)}<span className="text-sm font-medium text-blue-200">/100</span></> : '—'}
             </p>
-            <p className="text-[11px] text-blue-100 mt-0.5">{expertDone ? heroStatus.label : 'awaiting reviews'}</p>
+            <p className="text-[11px] text-blue-100 mt-0.5">{expertDone ? heroStatus.label : 'waiting for experts'}</p>
           </div>
           <div className="bg-white border border-slate-200 rounded-xl p-4">
-            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">Expert Reviews</p>
+            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">Experts who reviewed</p>
             <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">{a.totalValidations || 0}</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">across 12 frameworks</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">industry professionals</p>
           </div>
           <div className="bg-white border border-slate-200 rounded-xl p-4">
-            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">Survey Responses</p>
+            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">People who answered</p>
             <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">{totalSurveyResponses}</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">{surveys.length} survey{surveys.length !== 1 ? 's' : ''} linked</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">from {surveys.length} survey{surveys.length !== 1 ? 's' : ''}</p>
           </div>
           <div className="bg-white border border-slate-200 rounded-xl p-4">
-            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">Benchmark</p>
+            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">Compared to others</p>
             <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">
               {benchmark?.percentile != null ? `Top ${Math.max(1, 100 - benchmark.percentile)}%` : '—'}
             </p>
             <p className="text-[11px] text-slate-400 mt-0.5">
               {benchmark?.percentile != null
-                ? `beats ${benchmark.percentile}% of ${benchmark.cohortSize} validated ideas`
-                : 'needs more validated ideas to compare'}
+                ? `better than ${benchmark.percentile} out of every 100 ideas here`
+                : 'not enough other ideas to compare yet'}
             </p>
           </div>
         </div>
@@ -849,20 +854,22 @@ export default function IdeaDashboardPage() {
               </div>
               <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 flex flex-col items-center justify-center text-center">
                 <div className={`text-3xl font-black mb-1 ${TONE_DOM[sh.tone].text}`}>{(a.sharkTankAvg || 0).toFixed(0)}</div>
-                <div className="text-slate-500 text-sm">Shark Tank Score / 100</div>
+                <div className="text-slate-500 text-sm">Investor appeal / 100</div>
                 <div className={`text-xs font-medium mt-1 ${TONE_DOM[sh.tone].text}`}>{sh.label}</div>
+                <div className="text-[11px] text-slate-400 mt-2 leading-snug">How an investor on a show like Shark Tank would likely react</div>
               </div>
               <div className={`border rounded-2xl p-6 flex flex-col items-center justify-center text-center ${TONE_DOM[s.tone].bg} ${TONE_DOM[s.tone].border}`}>
                 <div className={`text-3xl font-black mb-1 ${TONE_DOM[s.tone].text}`}>{(a.startupSuccessAvg || 0).toFixed(0)}</div>
-                <div className="text-slate-500 text-sm">Validation Score / 100</div>
+                <div className="text-slate-500 text-sm">Chance of succeeding / 100</div>
                 <div className={`text-xs font-semibold mt-1 ${TONE_DOM[s.tone].text}`}>{s.label}</div>
+                <div className="text-[11px] text-slate-400 mt-2 leading-snug">Based on team, market, timing and traction</div>
               </div>
             </div>
 
             {/* Validation Breakdown */}
             <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
-              <h3 className="font-semibold text-slate-900 mb-1">Validation Breakdown</h3>
-              <p className="text-xs text-slate-500 mb-6">All 8 scoring categories, out of 50 points each.</p>
+              <h3 className="font-semibold text-slate-900 mb-1">Score by area</h3>
+              <p className="text-xs text-slate-500 mb-6">Experts scored your idea in 8 areas, each out of 50. Longer bar = stronger area.</p>
               <div className="grid lg:grid-cols-2 gap-x-10 gap-y-5">
                 {matrixWithPct.map(c => {
                   const st = breakdownStatus(c.pct);
@@ -895,7 +902,8 @@ export default function IdeaDashboardPage() {
             {/* Customer Validation */}
             {a.customerValidation && (
               <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
-                <h3 className="font-semibold text-slate-900 mb-6">Customer Validation</h3>
+                <h3 className="font-semibold text-slate-900 mb-1">Would customers actually do it?</h3>
+                <p className="text-xs text-slate-500 mb-6">The share of experts who believe a typical customer would take each action.</p>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
                   {[
                     { label: 'Would Use It', val: a.customerValidation.wouldUse },
@@ -922,7 +930,8 @@ export default function IdeaDashboardPage() {
             {/* Risk Assessment */}
             {a.riskSummary && Object.keys(a.riskSummary).length > 0 && (
               <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
-                <h3 className="font-semibold text-slate-900 mb-4">Risk Assessment</h3>
+                <h3 className="font-semibold text-slate-900 mb-1">Risks the experts flagged</h3>
+                <p className="text-xs text-slate-500 mb-4">How likely each problem is to hurt you, based on how the experts voted.</p>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
                   {Object.entries(a.riskSummary).map(([risk, counts]: any) => {
                     const level = dominantRisk(counts);
@@ -952,7 +961,7 @@ export default function IdeaDashboardPage() {
             <ValidationGapCard finding={gapFinding} ideaId={idea?.id} />
           ) : (
             <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
-              <h3 className="font-semibold text-slate-900 mb-1">Validation Weakness Detector</h3>
+              <h3 className="font-semibold text-slate-900 mb-1">What&apos;s still missing</h3>
               <p className="text-sm text-slate-500">
                 {expertDone
                   ? 'No standout weakness detected across your evidence right now. This re-checks automatically as new validations and survey responses arrive.'
@@ -987,8 +996,8 @@ export default function IdeaDashboardPage() {
             {/* Feedback */}
             {a.openFeedbacks?.length > 0 && (
               <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
-                <h3 className="font-semibold text-slate-900 mb-1">Validator Feedback</h3>
-                <p className="text-xs text-slate-500 mb-4">Per-validator written feedback, with contact details shared on submission.</p>
+                <h3 className="font-semibold text-slate-900 mb-1">What each expert said</h3>
+                <p className="text-xs text-slate-500 mb-4">Written comments in their own words, with their contact details.</p>
                 <div className="space-y-4">
                   {a.openFeedbacks.map((fb: any, i: number) => (
                     <div key={i} className="border border-slate-200 rounded-lg p-4">
@@ -1076,6 +1085,8 @@ export default function IdeaDashboardPage() {
           onChanged={setShare}
         />
       )}
+    </div>
+    {idea && <AIChatPanel targetType="idea" targetId={idea.id} readOnly={viewMode} />}
     </div>
   );
 }

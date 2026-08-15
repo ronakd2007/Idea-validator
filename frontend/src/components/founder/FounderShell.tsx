@@ -8,11 +8,13 @@ import { getStoredUser, clearAuth } from '@/lib/auth';
 // off-canvas drawer behind a top bar on phones. Navigation is the app's
 // actual routes — nothing aspirational.
 
+// Labels are deliberately plain: a first-time founder should be able to guess
+// what each page does without knowing any product jargon.
 const NAV = [
-  { href: '/founder', label: 'Overview', exact: true },
+  { href: '/founder', label: 'Home', exact: true },
   { href: '/founder/ideas', label: 'My Ideas' },
-  { href: '/founder/surveys', label: 'My Surveys' },
-  { href: '/founder/surveys/generate', label: 'AI Survey Builder' },
+  { href: '/founder/surveys', label: 'Customer Surveys' },
+  { href: '/founder/surveys/generate', label: 'Write a Survey with AI' },
 ];
 
 function NavItem({ href, label, active, onClick }: { href: string; label: string; active: boolean; onClick: () => void }) {

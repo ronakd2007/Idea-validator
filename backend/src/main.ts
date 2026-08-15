@@ -9,8 +9,10 @@ async function bootstrap() {
 
   // Gzip every response — the dashboard payload (all validations + relations)
   // is highly compressible JSON, and smaller bodies matter double on the
-  // cross-region hop between the API host and visitors.
-  app.use(compression());
+  // cross-region hop between the API host and visitors. The AI chat routes
+  // are excluded: gzip buffers output to build good-sized frames, which
+  // defeats real-time token-by-token streaming for the assistant's replies.
+  app.use(compression({ filter: (req, res) => !req.path.startsWith('/api/chat/') && compression.filter(req, res) }));
 
   const allowedOrigins = process.env.FRONTEND_URL
     ? process.env.FRONTEND_URL.split(',').map((o) => o.trim()).filter(Boolean)

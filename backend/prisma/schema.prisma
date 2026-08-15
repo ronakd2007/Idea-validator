@@ -26,6 +26,7 @@ model User {
   payments         Payment[]
   surveys          Survey[]
   activities       Activity[]
+  aiConversations  AiConversation[]
 }
 
 model ValidatorProfile {
@@ -93,6 +94,7 @@ model Idea {
   validations    ValidationResponse[]
   payments       Payment[]
   surveys        Survey[]
+  aiConversations AiConversation[]
 
   // Postgres does not index FK columns automatically — without this,
   // "all ideas by founder" is a sequential scan.
@@ -342,6 +344,7 @@ model Survey {
   sessions  SurveySession[]
   responses SurveyResponse[]
   incentive SurveyIncentive?
+  aiConversations AiConversation[]
 
   @@index([founderId])
   @@index([ideaId])
@@ -509,4 +512,38 @@ model IncentiveEntry {
   createdAt   DateTime        @default(now())
 
   @@index([incentiveId])
+}
+
+// AI Validation Assistant — one conversation per (founder, report). Exactly
+// one of ideaId/surveyId is ever set; enforced in the service layer, not the
+// DB (Postgres treats each NULL as distinct, so the two @@unique constraints
+// below correctly scope "one conversation per idea" and "one per survey"
+// independently without colliding on the null side).
+model AiConversation {
+  id        String   @id @default(cuid())
+  founderId String
+  founder   User     @relation(fields: [founderId], references: [id], onDelete: Cascade)
+  ideaId    String?
+  idea      Idea?    @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  surveyId  String?
+  survey    Survey?  @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages AiMessage[]
+
+  @@unique([founderId, ideaId])
+  @@unique([founderId, surveyId])
+  @@index([founderId])
+}
+
+model AiMessage {
+  id             String         @id @default(cuid())
+  conversationId String
+  conversation   AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String // USER | ASSISTANT
+  content        String
+  createdAt      DateTime       @default(now())
+
+  @@index([conversationId])
 }

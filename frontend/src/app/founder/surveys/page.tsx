@@ -86,8 +86,8 @@ export default function MySurveysPage() {
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
       <PageHeader
-        title="My Surveys"
-        subtitle="Build, share and analyze mass surveys"
+        title="Customer Surveys"
+        subtitle="Ask real people what they think, then see the answers here"
         actions={
           <button onClick={openCreate} className="bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition">
             + Create Survey
@@ -101,7 +101,7 @@ export default function MySurveysPage() {
         <EmptyState
           icon="📋"
           title="No surveys yet"
-          body="Surveys collect structured answers from real people in your target market — evidence you can put next to expert validation. No idea submission required."
+          body="A survey is a short set of questions you send to real people — friends, customers, anyone in your target market. Their answers show you whether people actually want your idea. You don't need to submit an idea first."
           action={
             <button onClick={openCreate} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition">
               + Create Survey
@@ -198,7 +198,11 @@ export default function MySurveysPage() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2 shrink-0 w-full sm:w-auto">
+              {/* No shrink-0 here: a LIVE survey shows six action buttons, whose
+                  combined max-content width (~600px) plus the title column
+                  overflowed tablet widths. Letting this box shrink lets its own
+                  flex-wrap move buttons onto a second row instead. */}
+              <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                 <Link href={`/founder/surveys/${s.id}/edit`} className="flex-1 sm:flex-none text-sm bg-blue-600 text-white px-3.5 py-1.5 rounded-lg hover:bg-blue-700 text-center font-semibold transition">
                   {s.status === 'DRAFT' ? 'Open Builder' : 'Manage'}
                 </Link>

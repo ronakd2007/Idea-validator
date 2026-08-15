@@ -3,8 +3,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser, isViewMode } from '@/lib/auth';
 import BarChart from '@/components/BarChart';
+import AIChatPanel from '@/components/chat/AIChatPanel';
 
 const RANGES: { value: string; label: string }[] = [
   { value: '24h', label: '24 hours' },
@@ -171,10 +172,12 @@ export default function SurveyAnalyticsPage() {
   const [segmentQuestionId, setSegmentQuestionId] = useState('');
   const [exporting, setExporting] = useState(false);
   const [versions, setVersions] = useState<any[]>([]);
+  const [viewMode, setViewMode] = useState(false);
 
   useEffect(() => {
     const user = getStoredUser();
     if (!user || user.role !== 'FOUNDER') { router.push('/auth/login'); return; }
+    setViewMode(isViewMode());
   }, [router]);
 
   useEffect(() => {
@@ -212,7 +215,8 @@ export default function SurveyAnalyticsPage() {
   const { survey, summary, trend, activity, time, questions, dropOff, quality, eligibleOutcomeQuestions, eligibleSegmentQuestions, segmentation, impact, abResults, insights, sampleSizeLabel, focus } = data;
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
+    <div className="flex">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 flex-1 min-w-0">
       <div className="flex items-center justify-between flex-wrap gap-3 mb-2">
         <Link href={`/founder/surveys/${surveyId}/edit`} className="text-sm text-slate-500 hover:text-slate-800">&larr; Back to Survey</Link>
         <button onClick={exportCsv} disabled={exporting} className="text-sm bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:border-slate-300 disabled:opacity-60">
@@ -544,6 +548,8 @@ export default function SurveyAnalyticsPage() {
           </div>
         ))}
       </div>
+    </div>
+    <AIChatPanel targetType="survey" targetId={surveyId} readOnly={viewMode} />
     </div>
   );
 }
