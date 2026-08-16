@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import WalkthroughPlayer from '@/components/WalkthroughPlayer';
 
 export const metadata: Metadata = {
   title: 'Tutorial — How IdeaValidator Works',
@@ -50,6 +51,11 @@ export default function TutorialPage() {
           <a href="#surveys" className="bg-white border border-slate-200 rounded-full px-4 py-2 text-slate-700 hover:border-blue-300">📊 Market surveys</a>
           <a href="#faq" className="bg-white border border-slate-200 rounded-full px-4 py-2 text-slate-700 hover:border-blue-300">❓ FAQ</a>
         </div>
+      </section>
+
+      {/* Watch it first — the fastest way to understand the product. */}
+      <section className="max-w-4xl mx-auto px-4 sm:px-6 pb-14">
+        <WalkthroughPlayer />
       </section>
 
       {/* Big picture */}

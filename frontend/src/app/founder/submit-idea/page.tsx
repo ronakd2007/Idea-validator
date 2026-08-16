@@ -7,6 +7,7 @@ import ScoreSelector from '@/components/ScoreSelector';
 import { FieldErrors, fieldClass, isUrl, requireText, scrollToFirstError, summaryMessage } from '@/lib/formValidation';
 import { AssumptionEditor } from '@/components/founder/AssumptionCheckCard';
 import type { Assumption } from '@/lib/assumptionCheck';
+import VideoUpload from '@/components/founder/VideoUpload';
 
 const STAGES = ['IDEA', 'RESEARCH', 'PROTOTYPE', 'MVP', 'REVENUE_GENERATING'];
 const INDUSTRIES = ['Technology', 'Healthcare', 'Finance', 'Education', 'E-commerce',
@@ -61,8 +62,8 @@ function SubmitIdeaInner() {
   const validateIdeaStep = (): boolean => {
     const errors: FieldErrors = {};
 
-    if (!idea.videoUrl.trim()) errors.videoUrl = 'Pitch video URL is required.';
-    else if (!isUrl(idea.videoUrl)) errors.videoUrl = 'Enter a full video link starting with https:// (YouTube, Loom, Vimeo…).';
+    if (!idea.videoUrl.trim()) errors.videoUrl = 'Add a pitch video — upload a file, or paste a link if it is already online.';
+    else if (!isUrl(idea.videoUrl)) errors.videoUrl = 'That video link does not look right. It should start with https://';
 
     const filled = teamMembers.filter(m => m.name.trim() || m.linkedinUrl.trim());
     if (filled.length === 0) {
@@ -260,13 +261,16 @@ function SubmitIdeaInner() {
       {step === 'idea' && (
         <form noValidate onSubmit={e => { e.preventDefault(); if (validateIdeaStep()) { setStep('assessment'); window.scrollTo({ top: 0 }); } }} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
           <div id="field-videoUrl">
-            <label className="block text-sm font-medium text-slate-700 mb-1">Pitch Video URL *</label>
-            <input type="url" placeholder="https://youtube.com/... or https://loom.com/..."
-              className={`w-full border rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 ${fieldClass(!!fieldErrors.videoUrl)}`}
-              value={idea.videoUrl} onChange={e => { setIdea({ ...idea, videoUrl: e.target.value }); clearFieldError('videoUrl'); }} />
-            {fieldErrors.videoUrl
-              ? <p className="text-xs text-red-600 mt-1 font-medium">{fieldErrors.videoUrl}</p>
-              : <p className="text-xs text-slate-500 mt-1">A short video (YouTube, Loom, Vimeo) introducing your idea. Validators watch this first.</p>}
+            <label className="block text-sm font-medium text-slate-700 mb-1">Pitch Video *</label>
+            <p className="text-xs text-slate-500 mb-2">
+              A short video introducing your idea — experts watch this first. Recording it on your phone is completely fine.
+            </p>
+            <VideoUpload
+              value={idea.videoUrl}
+              onChange={(url) => { setIdea({ ...idea, videoUrl: url }); clearFieldError('videoUrl'); }}
+              error={!!fieldErrors.videoUrl}
+            />
+            {fieldErrors.videoUrl && <p className="text-xs text-red-600 mt-1 font-medium">{fieldErrors.videoUrl}</p>}
           </div>
 
           <div id="field-team">

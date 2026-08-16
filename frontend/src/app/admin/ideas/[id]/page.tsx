@@ -7,6 +7,7 @@ import { useAdminGuard } from '@/lib/adminGuard';
 import RadarChart from '@/components/RadarChart';
 import { MATRIX_CATEGORIES, RISK_LABELS, breakdownStatus, dominantRisk, riskTone, TONE_DOM } from '@/lib/reportStatus';
 import { CATEGORY_STYLE, SURVEY_STATUS_STYLE, formatDate, formatDateTime, timeAgo } from '@/lib/adminActivity';
+import PitchVideo from '@/components/PitchVideo';
 
 const TABS = ['Idea', 'Validations', 'Surveys', 'Activity'];
 
@@ -130,9 +131,7 @@ export default function AdminIdeaDetailPage() {
             <Field label="Revenue model" value={idea.revenueModel} />
             <Field label="Target customer" value={idea.targetCustomer} />
             <Field label="Submitted" value={formatDateTime(idea.submittedAt)} />
-            {idea.videoUrl && <Field label="Video" value={
-              <a href={idea.videoUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 break-all">{idea.videoUrl}</a>
-            } />}
+            {idea.videoUrl && <Field label="Video" value={<PitchVideo url={idea.videoUrl} />} />}
           </Section>
 
           <Section title="Problem">

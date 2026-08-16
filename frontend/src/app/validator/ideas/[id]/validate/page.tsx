@@ -6,6 +6,7 @@ import { getStoredUser } from '@/lib/auth';
 import ScoreSelector from '@/components/ScoreSelector';
 import FrameworkOverviewPanel from '@/components/validator/FrameworkOverviewPanel';
 import { FRAMEWORKS } from '@/lib/frameworks';
+import PitchVideo from '@/components/PitchVideo';
 
 const RISK_LEVELS = ['LOW', 'MEDIUM', 'HIGH'];
 
@@ -288,11 +289,8 @@ export default function ValidateIdeaPage() {
               <div className="space-y-4">
                 {idea.videoUrl && (
                   <div>
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Pitch Video</p>
-                    <a href={idea.videoUrl} target="_blank" rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 hover:underline break-all">
-                      ▶ {idea.videoUrl}
-                    </a>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1.5">Pitch Video</p>
+                    <PitchVideo url={idea.videoUrl} />
                   </div>
                 )}
                 {idea.teamMembers && JSON.parse(idea.teamMembers).length > 0 && (

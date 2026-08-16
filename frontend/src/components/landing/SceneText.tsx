@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useScrollProgress } from './useScrollProgress';
 import { STAGES, TEXT_FADE, type StageText } from './sceneConfig';
 import { windowActivation, lerp } from './utils';
+import WatchDemoButton from '@/components/WalkthroughModal';
 
 const SIDE_CLASSES: Record<StageText['side'], string> = {
   center: 'items-center justify-center text-center left-0 right-0',
@@ -62,6 +63,10 @@ function TextBlock({ stage, activation }: { stage: StageText; activation: number
                 {stage.cta.secondary.label}
               </Link>
             )}
+            {/* Appears in both CTA rows — the opening hero and the closing
+                "Build it. Improve it." — so a visitor can watch the product
+                demo at the moment they're deciding, whenever that is. */}
+            <WatchDemoButton />
           </div>
         )}
       </div>

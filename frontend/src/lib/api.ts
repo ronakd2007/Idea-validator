@@ -223,6 +223,9 @@ export const api = {
   // AI Validation Assistant — conversation CRUD. Sending/regenerating a
   // message goes through streamChatMessage() below instead, since those
   // responses stream rather than resolving a single JSON body.
+  // Short-lived permission slip for a direct browser → Cloudinary video upload.
+  getVideoUploadSignature: () => request('/uploads/video-signature', { method: 'POST' }),
+
   getIdeaChat: (ideaId: string) => request(`/chat/ideas/${ideaId}`),
   newIdeaChat: (ideaId: string) => request(`/chat/ideas/${ideaId}/new`, { method: 'POST' }),
   deleteIdeaChat: (ideaId: string) => request(`/chat/ideas/${ideaId}`, { method: 'DELETE' }),
