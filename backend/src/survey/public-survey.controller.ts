@@ -24,15 +24,6 @@ export class PublicSurveyController {
     return this.publicSurveyService.updateProgress(publicId, body.sessionToken, body.questionIndex);
   }
 
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  @Patch(':publicId/sessions/focus-events')
-  recordFocusEvents(
-    @Param('publicId') publicId: string,
-    @Body() body: { sessionToken: string; events: { type: string; at: string; awaySec?: number }[] }
-  ) {
-    return this.publicSurveyService.recordFocusEvents(publicId, body.sessionToken, body.events);
-  }
-
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post(':publicId/responses')
   submit(

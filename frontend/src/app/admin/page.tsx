@@ -67,6 +67,7 @@ export default function AdminDashboardPage() {
               { href: '/admin/users', label: 'Manage Users', desc: 'View and manage all platform users', icon: '👥' },
               { href: '/admin/ideas', label: 'Manage Ideas', desc: 'Review and moderate submitted ideas', icon: '💡' },
               { href: '/admin/surveys', label: 'Manage Surveys', desc: 'Close, reopen, or remove mass surveys', icon: '📋' },
+              { href: '/admin/startups', label: 'Startup Directory', desc: 'Review listings before they go public', icon: '🚀' },
             ].map(item => (
               <Link key={item.href} href={item.href}
                 className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 hover:border-blue-300 transition">

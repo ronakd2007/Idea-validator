@@ -533,6 +533,39 @@ export class IdeasService {
   } as const;
 
   /**
+   * Aggregates-only validation summary for the public Startup Directory.
+   * Deliberately returns nothing that could identify a validator or expose
+   * written feedback — just the same overall score the founder already sees,
+   * a count, and the customer-validation percentages. Computed live, never
+   * copied onto the Startup row, so it can't go stale or be tampered with.
+   */
+  async publicValidationSummary(ideaId: string) {
+    const idea = await this.prisma.idea.findUnique({
+      where: { id: ideaId },
+      select: {
+        validations: {
+          select: { ...IdeasService.SCORE_RELATIONS, customerValidation: true },
+        },
+      },
+    });
+    if (!idea || !idea.validations.length) return null;
+
+    const cv = idea.validations.filter((v: any) => v.customerValidation).map((v: any) => v.customerValidation);
+    const score = this.leanOverallScore(idea.validations);
+    return {
+      score: score != null ? Math.round(score) : null,
+      validatorCount: idea.validations.length,
+      customerValidation: cv.length
+        ? {
+            wouldUse: Math.round(this.pct(cv.map((c: any) => c.wouldUse))),
+            wouldPay: Math.round(this.pct(cv.map((c: any) => c.wouldPay))),
+            wouldRecommend: Math.round(this.pct(cv.map((c: any) => c.wouldRecommend))),
+          }
+        : null,
+    };
+  }
+
+  /**
    * Overall score from minimal includes. MUST mirror aggregateScores()'s
    * normalizedScores math exactly (avg of per-category normalized averages) —
    * the e2e suite asserts benchmark score === dashboard overallScore so any

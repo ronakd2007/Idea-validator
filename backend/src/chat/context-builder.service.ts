@@ -164,10 +164,6 @@ export class ContextBuilderService {
       }
     }
 
-    if (d.focus) {
-      lines.push(`\nFOCUS MODE: ${d.focus.interruptedSessions}/${d.focus.trackedSessions} sessions interrupted (${d.focus.interruptedPct?.toFixed(0)}%).`);
-    }
-
     return lines.join('\n');
   }
 }

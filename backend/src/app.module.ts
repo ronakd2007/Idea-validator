@@ -15,6 +15,7 @@ import { AiModule } from './ai/ai.module';
 import { SurveyModule } from './survey/survey.module';
 import { ChatModule } from './chat/chat.module';
 import { UploadsModule } from './uploads/uploads.module';
+import { StartupsModule } from './startups/startups.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { UploadsModule } from './uploads/uploads.module';
     SurveyModule,
     ChatModule,
     UploadsModule,
+    StartupsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

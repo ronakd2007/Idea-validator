@@ -25,6 +25,7 @@ import StatusBadge, { type BadgeTone } from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/feedback';
 import AIChatPanel from '@/components/chat/AIChatPanel';
+import { STARTUP_STATUS_META } from '@/lib/startupTypes';
 
 // Report tones (positive/warning/critical) → shared badge tones.
 const REPORT_TONE_TO_BADGE: Record<string, BadgeTone> = {
@@ -77,6 +78,8 @@ export default function IdeaDashboardPage() {
   const [viewMode, setViewMode] = useState(false);
   const [benchmark, setBenchmark] = useState<any>(null);
   const [assumptionList, setAssumptionList] = useState<Assumption[]>([]);
+  // Startup Directory listing for this idea, if the founder has started one.
+  const [startup, setStartup] = useState<any>(null);
   const [tab, setTab] = useState<TabId>('overview');
 
   useEffect(() => {
@@ -87,6 +90,8 @@ export default function IdeaDashboardPage() {
     const fromHash = window.location.hash.replace('#', '');
     if (TABS.some((t) => t.id === fromHash)) setTab(fromHash as TabId);
     api.getIdeaBenchmark(params.id as string).then(setBenchmark).catch(() => {});
+    // 403 here simply means the idea isn't validated yet — not an error state.
+    api.getStartupForIdea(params.id as string).then((r: any) => setStartup(r.startup)).catch(() => {});
     api.getIdeaDashboard(params.id as string)
       .then((d) => {
         setData(d);
@@ -800,6 +805,63 @@ export default function IdeaDashboardPage() {
               </p>
             </div>
           )}
+
+          {/* Startup Directory — the natural next step once an idea is
+              validated. Gated on the same condition as the report itself. */}
+          {expertDone && (() => {
+            const meta = startup ? STARTUP_STATUS_META[startup.status] : null;
+            if (!startup) {
+              return (
+                <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6 flex items-start justify-between gap-4 flex-wrap">
+                  <div className="min-w-0">
+                    <h3 className="font-semibold text-slate-900">🚀 List My Startup</h3>
+                    <p className="text-sm text-slate-500 mt-1 leading-relaxed max-w-xl">
+                      Your idea is validated. Publish a public profile so investors, customers and partners can find you
+                      in the Startup Directory — we&apos;ll prefill most of it from what you&apos;ve already written.
+                    </p>
+                  </div>
+                  <Link
+                    href={viewMode ? '#' : `/founder/ideas/${idea?.id}/list-startup`}
+                    onClick={(e) => { if (viewMode) { e.preventDefault(); toast.info('This action is disabled while viewing as another user.'); } }}
+                    className="shrink-0 bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition"
+                  >
+                    List My Startup
+                  </Link>
+                </div>
+              );
+            }
+            return (
+              <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 mb-6">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-semibold text-slate-900">🚀 Startup Listing</h3>
+                      {meta && <StatusBadge tone={meta.tone as BadgeTone} dot>{meta.label}</StatusBadge>}
+                    </div>
+                    <p className="text-sm text-slate-500 mt-1 leading-relaxed max-w-xl">{meta?.blurb}</p>
+                    {startup.status === 'CHANGES_REQUESTED' && startup.reviewMessage && (
+                      <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3 whitespace-pre-line">
+                        {startup.reviewMessage}
+                      </p>
+                    )}
+                  </div>
+                  <div className="shrink-0 flex flex-wrap gap-2">
+                    {startup.status === 'APPROVED' ? (
+                      <Link href={`/startups/${startup.slug}`}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition">
+                        View public profile
+                      </Link>
+                    ) : startup.status !== 'REJECTED' ? (
+                      <Link href={`/founder/ideas/${idea?.id}/list-startup`}
+                        className="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold hover:border-blue-300 hover:text-blue-700 transition">
+                        {startup.status === 'CHANGES_REQUESTED' ? 'Make changes' : 'Edit listing'}
+                      </Link>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           <ValidationProgress steps={progressSteps} />
 

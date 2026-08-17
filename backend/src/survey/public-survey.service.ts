@@ -111,7 +111,6 @@ export class PublicSurveyService {
       description: survey.description,
       status: survey.status,
       collectEmail: survey.collectEmail,
-      focusMode: survey.focusMode,
       limitReached,
       incentive: survey.incentive
         ? {
@@ -171,56 +170,6 @@ export class PublicSurveyService {
     await this.prisma.surveySession.update({
       where: { id: session.id },
       data: { lastQuestionIndex: questionIndex, lastActivityAt: new Date() },
-    });
-    return { success: true };
-  }
-
-  // Focus Mode interruption log — best-effort like updateProgress: invalid
-  // input silently no-ops so the respondent's flow is never blocked. Events
-  // are appended (client batches may arrive across refreshes) and hard-capped
-  // so a hostile client can't grow the row unbounded.
-  private static readonly FOCUS_EVENT_TYPES = new Set(['FULLSCREEN_EXIT', 'TAB_HIDDEN', 'RETURNED']);
-  private static readonly FOCUS_EVENTS_CAP = 200;
-
-  async recordFocusEvents(publicId: string, sessionToken: string, events: any) {
-    const survey = await this.prisma.survey.findUnique({
-      where: { publicId },
-      select: { id: true, focusMode: true },
-    });
-    if (!survey || !survey.focusMode || !sessionToken || !Array.isArray(events)) return { success: false };
-    const session = await this.prisma.surveySession.findUnique({ where: { token: sessionToken } });
-    if (!session || session.surveyId !== survey.id || session.completed) return { success: false };
-
-    // Whitelist strictly: only the three known types, timestamp coerced to a
-    // valid ISO string, awaySec clamped to a sane non-negative bound. Anything
-    // else in the payload is dropped, never stored.
-    const clean = events
-      .filter((e: any) => e && PublicSurveyService.FOCUS_EVENT_TYPES.has(e.type))
-      .map((e: any) => {
-        const at = new Date(e.at);
-        const out: { type: string; at: string; awaySec?: number } = {
-          type: e.type,
-          at: isNaN(at.getTime()) ? new Date().toISOString() : at.toISOString(),
-        };
-        if (e.type === 'RETURNED' && Number.isFinite(Number(e.awaySec))) {
-          out.awaySec = Math.min(Math.max(Math.round(Number(e.awaySec)), 0), 24 * 3600);
-        }
-        return out;
-      });
-    if (clean.length === 0) return { success: true };
-
-    let existing: any[] = [];
-    try {
-      const parsed = JSON.parse(session.focusEvents || '[]');
-      if (Array.isArray(parsed)) existing = parsed;
-    } catch {
-      // corrupted row — start fresh rather than fail the respondent
-    }
-    const merged = existing.concat(clean).slice(0, PublicSurveyService.FOCUS_EVENTS_CAP);
-
-    await this.prisma.surveySession.update({
-      where: { id: session.id },
-      data: { focusEvents: JSON.stringify(merged), lastActivityAt: new Date() },
     });
     return { success: true };
   }

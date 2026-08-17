@@ -27,6 +27,7 @@ model User {
   surveys          Survey[]
   activities       Activity[]
   aiConversations  AiConversation[]
+  startups         Startup[]
 }
 
 model ValidatorProfile {
@@ -95,6 +96,7 @@ model Idea {
   payments       Payment[]
   surveys        Survey[]
   aiConversations AiConversation[]
+  startup        Startup?
 
   // Postgres does not index FK columns automatically — without this,
   // "all ideas by founder" is a sequential scan.
@@ -328,9 +330,10 @@ model Survey {
   publicId      String?   @unique // set on publish; non-guessable, safe to share, never the internal cuid
   responseLimit Int?
   collectEmail  Boolean   @default(false) // optional self-reported email field on the public form — not a verified/authenticated identity
-  // Focus Mode: respondents are invited into browser fullscreen and
-  // interruptions (fullscreen exit / tab hidden) are recorded on the session.
-  // A distraction-reduction nudge, never a lock — OFF by default.
+  // RETIRED (2026-08-16): Focus Mode was removed entirely. Nothing reads or
+  // writes this — it is kept only because dropping a populated column is a
+  // destructive migration that would fail the deploy, exactly as with
+  // Idea.dashboardUnlockedAt. Safe to drop in a deliberate maintenance step.
   focusMode     Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -404,9 +407,7 @@ model SurveySession {
   lastQuestionIndex Int       @default(0) // highest question index reached — the basis for Phase 3 drop-off analysis
   submittedAt       DateTime?
   completed         Boolean   @default(false)
-  // Focus Mode interruption log — JSON array of whitelisted events only:
-  // { type: FULLSCREEN_EXIT | TAB_HIDDEN | RETURNED, at, awaySec? }.
-  // Never screenshots/keystrokes/anything beyond these browser signals.
+  // RETIRED (2026-08-16) alongside Survey.focusMode — see the note there.
   focusEvents       String    @default("[]")
 
   response SurveyResponse?
@@ -546,4 +547,67 @@ model AiMessage {
   createdAt      DateTime       @default(now())
 
   @@index([conversationId])
+}
+
+// Public Startup Directory.
+//
+// The startup — not the validation — is the primary entity here. Validation is
+// one optional, founder-controlled section of the profile, deliberately kept as
+// derived decoration rather than identity, so this model can later stand on its
+// own as a discovery/growth platform (milestones, updates, traction over time)
+// without any of it being entangled with IdeaValidator's scoring.
+//
+// Future sections (Milestones, Updates/Success Stories) belong in their own
+// tables keyed on startupId — nothing here needs to change to add them.
+model Startup {
+  id        String @id @default(cuid())
+  // One listing per validated idea. Cascade: deleting the idea (or the founder)
+  // removes the listing, so a public page can never outlive its owner.
+  ideaId    String @unique
+  idea      Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  founderId String
+  founder   User   @relation(fields: [founderId], references: [id], onDelete: Cascade)
+
+  // Readable public URL (/startups/eco-water). Minted from the name and frozen
+  // on approval so a live public link never breaks if the name is edited later.
+  slug String @unique
+
+  // ---- profile ----
+  name        String
+  logoUrl     String  @default("")
+  tagline     String  @default("") // one-line description
+  about       String  @default("")
+  problem     String  @default("") // prefilled from Idea.problemStatement
+  solution    String  @default("") // prefilled from Idea.solutionDescription
+  product     String  @default("") // what's actually built — section hidden when empty
+  traction    String  @default("") // users/revenue/pilots — section hidden when empty
+  industry    String  @default("")
+  location    String  @default("")
+  foundedYear Int?
+  website     String  @default("")
+  linkedinUrl String  @default("")
+  teamMembers String  @default("[]") // JSON [{ name, linkedinUrl }] — prefilled from the idea
+  stage       String  @default("IDEA")
+
+  // JSON array from a fixed set: FUNDING | CUSTOMERS | MENTORS | PARTNERSHIPS | EMPLOYEES | OTHER
+  lookingFor String @default("[]")
+
+  // Founder-controlled, opt-in publication of validation aggregates. Whitelisted
+  // server-side; the underlying numbers are always computed live from the idea,
+  // never copied here, so they can't go stale or be tampered with.
+  validationDisplay String @default("{}")
+
+  // DRAFT | PENDING_REVIEW | CHANGES_REQUESTED | APPROVED | REJECTED
+  status String @default("DRAFT")
+  // Shown to the founder so they know what to fix. Distinct from adminNote,
+  // which is private and must never leave an ADMIN-guarded route.
+  reviewMessage String  @default("")
+  adminNote     String  @default("")
+  submittedAt   DateTime?
+  reviewedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([founderId])
+  @@index([status]) // the public directory filters on this on every request
 }

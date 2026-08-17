@@ -5,6 +5,10 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { getStoredUser, isViewMode } from '@/lib/auth';
 import BarChart from '@/components/BarChart';
+import HBarChart from '@/components/HBarChart';
+import StackedBar from '@/components/StackedBar';
+import LineChart from '@/components/LineChart';
+import { chartKindFor, readingFor, chartNoteFor, lowSampleNote } from '@/lib/questionChart';
 import AIChatPanel from '@/components/chat/AIChatPanel';
 
 const RANGES: { value: string; label: string }[] = [
@@ -212,7 +216,7 @@ export default function SurveyAnalyticsPage() {
   if (loading && !data) return <div className="flex items-center justify-center min-h-screen"><div className="text-slate-500">Loading analytics...</div></div>;
   if (error || !data) return <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error || 'Not found'}</div></div>;
 
-  const { survey, summary, trend, activity, time, questions, dropOff, quality, eligibleOutcomeQuestions, eligibleSegmentQuestions, segmentation, impact, abResults, insights, sampleSizeLabel, focus } = data;
+  const { survey, summary, trend, activity, time, questions, dropOff, quality, eligibleOutcomeQuestions, eligibleSegmentQuestions, segmentation, impact, abResults, insights, sampleSizeLabel } = data;
 
   return (
     <div className="flex">
@@ -302,7 +306,7 @@ export default function SurveyAnalyticsPage() {
             ))}
           </div>
         </div>
-        {trend.length > 0 ? <BarChart data={trend.map((t: any) => ({ label: t.label, value: t.count }))} /> : <p className="text-sm text-slate-400 text-center py-8">No responses in this range.</p>}
+        {trend.length > 0 ? <LineChart data={trend.map((t: any) => ({ label: t.label, value: t.count }))} /> : <p className="text-sm text-slate-400 text-center py-8">No responses in this range.</p>}
       </div>
 
       {/* Survey Activity + Time Spent */}
@@ -313,6 +317,14 @@ export default function SurveyAnalyticsPage() {
             <div className="flex justify-between"><span className="text-slate-500">Started</span><span className="font-semibold text-slate-900 tabular-nums">{activity.started}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Completed</span><span className="font-semibold text-slate-900 tabular-nums">{activity.completed}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Abandoned</span><span className="font-semibold text-slate-900 tabular-nums">{activity.abandoned}</span></div>
+          </div>
+          <div className="mt-4">
+            <StackedBar
+              segments={[
+                { label: 'Completed', count: activity.completed, color: '#2563eb' },
+                { label: 'Abandoned', count: activity.abandoned, color: '#cbd5e1' },
+              ]}
+            />
           </div>
           <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between">
             <span className="text-sm text-slate-500">Completion Rate</span>
@@ -331,61 +343,21 @@ export default function SurveyAnalyticsPage() {
         </div>
       </div>
 
-      {/* Focus Mode — only rendered when the survey has it enabled; counts
-          describe sessions, never verdicts on individual respondents. */}
-      {focus && (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mb-6">
-          <h3 className="font-semibold text-slate-900 mb-1">🔒 Focus Mode</h3>
-          <p className="text-xs text-slate-500 mb-4">
-            Interruptions are moments a respondent left fullscreen or switched tabs. They are informational only —
-            no response is disqualified or hidden because of them.
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
-            <div>
-              <p className="text-2xl font-bold text-slate-900 tabular-nums">
-                {focus.interruptedSessions}
-                <span className="text-sm font-semibold text-slate-400"> / {focus.trackedSessions}</span>
-              </p>
-              <p className="text-xs text-slate-500 mt-0.5">Sessions interrupted{focus.interruptedPct != null ? ` (${focus.interruptedPct.toFixed(0)}%)` : ''}</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900 tabular-nums">{focus.fullscreenExits}</p>
-              <p className="text-xs text-slate-500 mt-0.5">Fullscreen exits</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900 tabular-nums">{focus.tabHidden}</p>
-              <p className="text-xs text-slate-500 mt-0.5">Tab switches</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900 tabular-nums">
-                {focus.avgAwaySeconds != null ? `${Math.round(focus.avgAwaySeconds)}s` : 'N/A'}
-              </p>
-              <p className="text-xs text-slate-500 mt-0.5">Avg. time away</p>
-            </div>
-          </div>
-          {(focus.completionAmongInterrupted != null || focus.completionAmongUninterrupted != null) && (
-            <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap gap-x-8 gap-y-1 text-sm">
-              <span className="text-slate-500">
-                Completion when interrupted:{' '}
-                <span className="font-semibold text-slate-900">
-                  {focus.completionAmongInterrupted != null ? `${focus.completionAmongInterrupted.toFixed(0)}%` : 'N/A'}
-                </span>
-              </span>
-              <span className="text-slate-500">
-                Without interruptions:{' '}
-                <span className="font-semibold text-slate-900">
-                  {focus.completionAmongUninterrupted != null ? `${focus.completionAmongUninterrupted.toFixed(0)}%` : 'N/A'}
-                </span>
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Response Quality */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mb-6">
         <h3 className="font-semibold text-slate-900 mb-1">Response Quality</h3>
         <p className="text-xs text-slate-500 mb-4">Based on multiple independent signals — never a single one alone. Nothing is hidden or deleted automatically.</p>
+        {/* Status colours, so each segment carries an icon as well — the state
+            is never signalled by colour alone. */}
+        <div className="mb-5">
+          <StackedBar
+            segments={[
+              { label: 'High quality', count: quality.buckets.HIGH || 0, color: '#059669', icon: '✓' },
+              { label: 'Medium', count: quality.buckets.MEDIUM || 0, color: '#d97706', icon: '!' },
+              { label: 'Potentially low', count: quality.buckets.POTENTIALLY_LOW || 0, color: '#dc2626', icon: '⚠' },
+            ]}
+          />
+        </div>
         <div className="grid grid-cols-3 gap-4">
           {(['HIGH', 'MEDIUM', 'POTENTIALLY_LOW'] as const).map((key) => {
             const count = quality.buckets[key] || 0;
@@ -499,15 +471,35 @@ export default function SurveyAnalyticsPage() {
             How far respondents get before giving up. A steep fall after one question usually means that question is
             confusing, too personal, or too much effort — fixing it is the fastest way to get more complete responses.
           </p>
-          <BarChart data={dropOff.map((d: any) => ({ label: `Q${d.index + 1}`, value: d.reachedPct }))} color="#60a5fa" />
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-4">
-            {dropOff.map((d: any) => (
-              <div key={d.index} className="text-center">
-                <p className="text-xs font-semibold text-slate-700">{d.reachedPct.toFixed(0)}%</p>
-                <p className="text-[10px] text-slate-400">Q{d.index + 1}</p>
-              </div>
-            ))}
-          </div>
+          {(() => {
+            // The story is the biggest single fall, not the absolute heights —
+            // so find it, paint that step red, and say it in words.
+            let worstIdx = -1, worstDrop = 0;
+            for (let i = 1; i < dropOff.length; i++) {
+              const drop = dropOff[i - 1].reachedPct - dropOff[i].reachedPct;
+              if (drop > worstDrop) { worstDrop = drop; worstIdx = i; }
+            }
+            return (
+              <>
+                <HBarChart
+                  sorted={false}
+                  maxBars={dropOff.length}
+                  data={dropOff.map((d: any, i: number) => ({
+                    label: `Q${d.index + 1}. ${d.questionText}`,
+                    count: d.reachedCount,
+                    pct: d.reachedPct,
+                    highlight: i === worstIdx && worstDrop >= 10,
+                  }))}
+                />
+                {worstIdx > 0 && worstDrop >= 10 && (
+                  <p className="text-sm text-slate-600 mt-3 leading-relaxed">
+                    You lose most people at <span className="font-semibold text-slate-900">Question {worstIdx + 1}</span> —
+                    a {worstDrop.toFixed(0)} point drop. Shortening or simplifying it is the fastest way to more complete responses.
+                  </p>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 
@@ -524,23 +516,62 @@ export default function SurveyAnalyticsPage() {
               <span className="text-xs text-slate-400 shrink-0">{q.answeredCount} answered</span>
             </div>
 
-            {q.distribution && q.average === undefined && (
-              <div className="mt-3">
-                {q.distribution.length === 0 && <p className="text-sm text-slate-400">No answers yet.</p>}
-                {q.distribution.map((d: any) => <DistributionBar key={d.label} label={d.label} count={d.count} pct={d.pct} imageUrl={d.imageUrl} />)}
-              </div>
-            )}
+            {(() => {
+              const kind = chartKindFor(q);
+              const reading = readingFor(q);
+              const note = chartNoteFor(q);
+              const low = lowSampleNote(q.answeredCount);
 
-            {q.average !== undefined && (
-              <div className="mt-3">
-                {q.average != null ? (
-                  <p className="text-lg font-bold text-blue-600 mb-2">{q.average.toFixed(1)} / {q.max}</p>
-                ) : (
-                  <p className="text-sm text-slate-400 mb-2">No answers yet.</p>
-                )}
-                <BarChart data={q.distribution.map((d: any) => ({ label: String(d.value), value: d.count }))} height={80} />
-              </div>
-            )}
+              return (
+                <div className="mt-3">
+                  {low && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 mb-3">
+                      {low}
+                    </p>
+                  )}
+
+                  {kind === 'EMPTY' && <p className="text-sm text-slate-400">No answers yet.</p>}
+
+                  {/* Yes/No — one proportion, so one stacked bar. */}
+                  {kind === 'STACKED' && (
+                    <StackedBar
+                      segments={['Yes', 'No'].map((label) => ({
+                        label,
+                        count: q.distribution?.find((d: any) => d.label === label)?.count ?? 0,
+                        color: label === 'Yes' ? '#2563eb' : '#cbd5e1',
+                      }))}
+                    />
+                  )}
+
+                  {/* Choice-style answers — horizontal bars, most-picked first. */}
+                  {kind === 'HBAR' && (
+                    <>
+                      {note && <p className="text-xs text-slate-500 mb-2.5">{note}</p>}
+                      <HBarChart
+                        data={q.distribution.map((d: any) => ({ label: d.label, count: d.count, pct: d.pct, imageUrl: d.imageUrl }))}
+                      />
+                    </>
+                  )}
+
+                  {/* Rating / linear scale — ordered columns, never sorted: the
+                      shape of the distribution is the finding (two humps = two
+                      audiences), which an average alone would hide. */}
+                  {kind === 'COLUMNS' && (
+                    <>
+                      {q.average != null && (
+                        <p className="text-sm text-slate-600 mb-2">
+                          Average: <span className="text-lg font-bold text-blue-600">{q.average.toFixed(1)}</span>
+                          <span className="text-slate-400"> out of {q.max}</span>
+                        </p>
+                      )}
+                      <BarChart data={q.distribution.map((d: any) => ({ label: String(d.value), value: d.count }))} height={90} />
+                    </>
+                  )}
+
+                  {reading && <p className="text-sm text-slate-600 mt-3 leading-relaxed">{reading}</p>}
+                </div>
+              );
+            })()}
 
             {q.isText && (
               <OpenTextBrowser surveyId={surveyId} questionId={q.id} total={q.answeredCount} />

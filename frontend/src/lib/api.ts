@@ -160,8 +160,6 @@ export const api = {
   startPublicSurveySession: (publicId: string) => request(`/public/surveys/${publicId}/sessions`, { method: 'POST' }),
   updatePublicSurveyProgress: (publicId: string, sessionToken: string, questionIndex: number) =>
     request(`/public/surveys/${publicId}/sessions/progress`, { method: 'PATCH', body: JSON.stringify({ sessionToken, questionIndex }) }),
-  recordFocusEvents: (publicId: string, sessionToken: string, events: { type: string; at: string; awaySec?: number }[]) =>
-    request(`/public/surveys/${publicId}/sessions/focus-events`, { method: 'PATCH', body: JSON.stringify({ sessionToken, events }) }),
   submitPublicSurveyResponse: (publicId: string, body: any) =>
     request(`/public/surveys/${publicId}/responses`, { method: 'POST', body: JSON.stringify(body) }),
   submitIncentiveEntry: (publicId: string, name: string, contact: string) =>
@@ -225,6 +223,31 @@ export const api = {
   // responses stream rather than resolving a single JSON body.
   // Short-lived permission slip for a direct browser → Cloudinary video upload.
   getVideoUploadSignature: () => request('/uploads/video-signature', { method: 'POST' }),
+  getImageUploadSignature: () => request('/uploads/image-signature', { method: 'POST' }),
+
+  // Startup Directory — founder listing management
+  getStartupForIdea: (ideaId: string) => request(`/startups/idea/${ideaId}`),
+  saveStartupForIdea: (ideaId: string, body: any) =>
+    request(`/startups/idea/${ideaId}`, { method: 'PUT', body: JSON.stringify(body) }),
+
+  // Startup Directory — admin review queue
+  getAdminStartups: (status?: string) =>
+    request(`/admin/startups${status && status !== 'ALL' ? `?status=${encodeURIComponent(status)}` : ''}`),
+  getAdminStartup: (id: string) => request(`/admin/startups/${id}`),
+  reviewStartup: (id: string, body: { action: string; reviewMessage?: string; adminNote?: string }) =>
+    request(`/admin/startups/${id}/review`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  // Startup Directory — public (no auth)
+  getPublicStartups: (filters: { industry?: string; location?: string; stage?: string; lookingFor?: string } = {}) => {
+    const p = new URLSearchParams();
+    if (filters.industry) p.set('industry', filters.industry);
+    if (filters.location) p.set('location', filters.location);
+    if (filters.stage) p.set('stage', filters.stage);
+    if (filters.lookingFor) p.set('lookingFor', filters.lookingFor);
+    const qs = p.toString();
+    return request(`/public/startups${qs ? `?${qs}` : ''}`);
+  },
+  getPublicStartup: (slug: string) => request(`/public/startups/${slug}`),
 
   getIdeaChat: (ideaId: string) => request(`/chat/ideas/${ideaId}`),
   newIdeaChat: (ideaId: string) => request(`/chat/ideas/${ideaId}/new`, { method: 'POST' }),

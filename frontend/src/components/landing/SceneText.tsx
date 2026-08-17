@@ -32,7 +32,10 @@ function TextBlock({ stage, activation }: { stage: StageText; activation: number
         className={`relative max-w-xl ${needsScrim ? 'bg-white/60 backdrop-blur-md rounded-3xl px-8 py-8 md:px-10 md:py-10' : ''}`}
         style={{ transform: `translateY(${translateY}px)`, pointerEvents: activation > 0.5 ? 'auto' : 'none' }}
       >
-        <p className="text-blue-600/90 text-xs font-semibold tracking-[0.3em] uppercase mb-6">{stage.eyebrow}</p>
+        {/* stage.eyebrow ("THE IDEA", "SUBMIT", "12 DIMENSIONS"…) is deliberately
+            not rendered — the small blue kicker above each headline was removed
+            as visual noise. The strings stay in sceneConfig so the labels are
+            one line away if they're ever wanted back. */}
 
         {stage.headline.length > 0 && (
           <h2 className="text-4xl md:text-6xl font-semibold text-slate-900 leading-[1.08] tracking-tight mb-5">
