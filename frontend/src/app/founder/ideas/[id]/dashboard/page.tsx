@@ -26,6 +26,7 @@ import EmptyState from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/feedback';
 import AIChatPanel from '@/components/chat/AIChatPanel';
 import { STARTUP_STATUS_META } from '@/lib/startupTypes';
+import ReviewRating from '@/components/founder/ReviewRating';
 
 // Report tones (positive/warning/critical) → shared badge tones.
 const REPORT_TONE_TO_BADGE: Record<string, BadgeTone> = {
@@ -1088,6 +1089,9 @@ export default function IdeaDashboardPage() {
                           <p className="text-sm text-slate-700 leading-relaxed">{fb.improvement}</p>
                         </div>
                       </div>
+                      {fb.validationId && (
+                        <ReviewRating validationId={fb.validationId} initial={fb.helpfulRating ?? null} readOnly={viewMode} />
+                      )}
                     </div>
                   ))}
                 </div>

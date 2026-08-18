@@ -275,6 +275,9 @@ export class IdeasService {
     // v.validator is optional-chained throughout: some callers (version history,
     // the public page) aggregate score relations without loading validator rows.
     const openFeedbacks = validations.filter(v => v.openFeedback && v.validator).map(v => ({
+      // The validation id, so the founder can rate this specific review.
+      validationId: v.id,
+      helpfulRating: v.helpfulRating ?? null,
       strength: v.openFeedback.biggestStrength,
       weakness: v.openFeedback.biggestWeakness,
       improvement: v.openFeedback.suggestedImprovement,

@@ -122,6 +122,14 @@ model ValidationResponse {
   validator   User     @relation(fields: [validatorId], references: [id])
   createdAt   DateTime @default(now())
 
+  // Founder's rating of how useful this review was: 1 = not helpful,
+  // 2 = somewhat, 3 = very helpful. Null until the founder rates it.
+  // This is the quality signal that keeps paid/credited reviews honest — a
+  // rushed review earns nothing — and it later feeds a validator's public
+  // reputation. Only the owning founder can write it.
+  helpfulRating Int?
+  ratedAt       DateTime?
+
   marketOpportunity      MarketOpportunityScore?
   feasibility            FeasibilityScore?
   founderFit             FounderFitScore?

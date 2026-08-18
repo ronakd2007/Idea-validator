@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Param, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Param, Body, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -26,5 +26,14 @@ export class ValidationController {
   @Roles('VALIDATOR')
   checkValidated(@Param('ideaId') ideaId: string, @Request() req) {
     return this.validationService.checkAlreadyValidated(ideaId, req.user.userId);
+  }
+
+  // Founder-only: rate how useful a review was. Ownership is checked in the
+  // service; the global view-as middleware blocks this while an admin is
+  // viewing as the founder.
+  @Patch(':validationId/rating')
+  @Roles('FOUNDER')
+  rate(@Param('validationId') validationId: string, @Request() req, @Body() body: { rating: number }) {
+    return this.validationService.rateValidation(validationId, req.user.userId, Number(body?.rating));
   }
 }

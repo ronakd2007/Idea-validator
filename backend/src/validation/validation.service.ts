@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
 
@@ -124,5 +124,32 @@ export class ValidationService {
     }
 
     return { alreadyValidated: !!existing };
+  }
+
+  /**
+   * The founder rates how useful a review was: 1 = not helpful, 2 = somewhat,
+   * 3 = very helpful. This is the quality gate for the incentive model — a
+   * rushed review earns nothing — and it later feeds a validator's public
+   * reputation. Only the founder who owns the idea can write it, and the
+   * rating is never exposed to the validator from here.
+   */
+  async rateValidation(validationId: string, founderId: string, rating: number) {
+    if (![1, 2, 3].includes(rating)) {
+      throw new BadRequestException('Rating must be 1, 2 or 3.');
+    }
+
+    const validation = await this.prisma.validationResponse.findUnique({
+      where: { id: validationId },
+      select: { id: true, idea: { select: { founderId: true } } },
+    });
+    if (!validation) throw new NotFoundException('Review not found');
+    if (validation.idea.founderId !== founderId) throw new ForbiddenException('Access denied');
+
+    const updated = await this.prisma.validationResponse.update({
+      where: { id: validationId },
+      data: { helpfulRating: rating, ratedAt: new Date() },
+      select: { id: true, helpfulRating: true },
+    });
+    return { success: true, validationId: updated.id, helpfulRating: updated.helpfulRating };
   }
 }

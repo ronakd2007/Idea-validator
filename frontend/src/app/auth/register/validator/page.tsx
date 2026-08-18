@@ -121,9 +121,38 @@ export default function RegisterValidatorPage() {
     <div className="min-h-screen flex items-center justify-center px-4 py-12">
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 w-full max-w-2xl">
         <div className="mb-6">
-          <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded-full font-medium">Idea Validator</span>
-          <h1 className="text-2xl font-bold text-slate-900 mt-3 mb-1">Become a Validator</h1>
-          <p className="text-slate-500 text-sm">Review and evaluate business ideas. Profile requires admin approval.</p>
+          <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded-full font-medium">For investors, operators &amp; mentors</span>
+          <h1 className="text-2xl font-bold text-slate-900 mt-3 mb-1">See new startup ideas first</h1>
+          <p className="text-slate-600 text-sm leading-relaxed">
+            Review early-stage ideas from founders in your industry — and get their contact details the moment you do.
+            Invest, mentor, hire or partner with the ones you like.
+          </p>
+
+          {/* Leads with what the validator gets. The work is real (a structured
+              review across 12 frameworks), so the reasons to do it have to be
+              on the page, not assumed. */}
+          <ul className="mt-4 space-y-2">
+            {[
+              ['🔍', 'Early access to real ideas', 'See what founders are building before anyone else — often months before launch.'],
+              ['🤝', 'Direct line to the founder', 'Your contact details go to every founder you review. Say whether you are open to investing, mentoring, hiring or partnering.'],
+              ['🚀', 'First look at the Startup Directory', 'Validated startups are listed publicly — you see them before the public does.'],
+              ['🎓', 'A public expert profile', 'Build a visible track record of the ideas you have reviewed.'],
+            ].map(([icon, title, body]) => (
+              <li key={title} className="flex gap-2.5">
+                <span className="shrink-0 text-base leading-6" aria-hidden>{icon}</span>
+                <span>
+                  <span className="block text-sm font-semibold text-slate-800">{title}</span>
+                  <span className="block text-xs text-slate-500 leading-relaxed">{body}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <p className="text-xs text-slate-500 mt-4 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 leading-relaxed">
+            <span className="font-semibold text-slate-700">What it involves:</span> about 20–30 minutes per idea —
+            you score it across 12 areas and write what is strong, what is weak, and what you would fix.
+            Review as many or as few as you like. Applications are checked by our team before approval.
+          </p>
         </div>
 
         {error && <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-3 mb-4 text-sm">{error}</div>}

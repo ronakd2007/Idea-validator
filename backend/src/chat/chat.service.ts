@@ -139,14 +139,15 @@ export class ChatService {
     let full = '';
     try {
       const stream = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-120b',
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'system', content: reportContext },
           ...recent.map((m) => ({ role: (m.role === 'ASSISTANT' ? 'assistant' : 'user') as 'assistant' | 'user', content: m.content })),
         ],
         temperature: 0.5,
-        max_tokens: 1200,
+        max_tokens: 1600,
+        reasoning_effort: 'low',
         stream: true,
       });
 

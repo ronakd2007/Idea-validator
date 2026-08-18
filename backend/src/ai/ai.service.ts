@@ -71,7 +71,7 @@ export class AiService {
     if (status === 429) {
       return new ServiceUnavailableException('AI service is rate limited right now — try again in a minute.');
     }
-    if (status === 400 && /model|decommission/i.test(err?.message || '')) {
+    if ((status === 400 || status === 404) && /model|decommission/i.test(err?.message || '')) {
       return new ServiceUnavailableException('The configured AI model is no longer available — the model name needs updating.');
     }
     return new ServiceUnavailableException('AI service is temporarily unavailable — try again shortly.');
@@ -225,9 +225,10 @@ NEXT STEPS
     let completion;
     try {
       completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-120b',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 800,
+        max_tokens: 1200,
+        reasoning_effort: 'low',
       });
     } catch (err) {
       throw this.toAiError(err);
@@ -304,10 +305,11 @@ Return ONLY a single JSON object: { "assumptions": [ { "statement": string, "cat
     let raw: any;
     try {
       const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-120b',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.4,
-        max_tokens: 700,
+        max_tokens: 1000,
+        reasoning_effort: 'low',
         response_format: { type: 'json_object' },
       });
       raw = JSON.parse(completion.choices[0]?.message?.content || '{}');
@@ -464,10 +466,11 @@ Return ONLY a single JSON object, no commentary, matching exactly:
       let completion;
       try {
         completion = await groq.chat.completions.create({
-          model: 'llama-3.3-70b-versatile',
+          model: 'openai/gpt-oss-120b',
           messages: [{ role: 'user', content: attempt === 0 ? prompt : `${prompt}\n\nReturn ONLY the JSON object. No commentary, no markdown fences.` }],
           temperature: 0.4,
-          max_tokens: 2000,
+          max_tokens: 2500,
+          reasoning_effort: 'low',
           response_format: { type: 'json_object' },
         });
       } catch (err) {
@@ -512,10 +515,11 @@ Return ONLY a single JSON object, no commentary, matching exactly:
       let completion;
       try {
         completion = await groq.chat.completions.create({
-          model: 'llama-3.3-70b-versatile',
+          model: 'openai/gpt-oss-120b',
           messages: [{ role: 'user', content: attempt === 0 ? prompt : `${prompt}\n\nReturn ONLY the JSON object. No commentary, no markdown fences.` }],
           temperature: 0.3,
-          max_tokens: 3000,
+          max_tokens: 3500,
+          reasoning_effort: 'low',
           response_format: { type: 'json_object' },
         });
       } catch (err) {

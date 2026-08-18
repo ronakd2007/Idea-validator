@@ -222,6 +222,10 @@ export const api = {
   // message goes through streamChatMessage() below instead, since those
   // responses stream rather than resolving a single JSON body.
   // Short-lived permission slip for a direct browser → Cloudinary video upload.
+  // Founder rates how useful an expert review was (1 = not helpful, 3 = very).
+  rateValidation: (validationId: string, rating: number) =>
+    request(`/validation/${validationId}/rating`, { method: 'PATCH', body: JSON.stringify({ rating }) }),
+
   getVideoUploadSignature: () => request('/uploads/video-signature', { method: 'POST' }),
   getImageUploadSignature: () => request('/uploads/image-signature', { method: 'POST' }),
 
