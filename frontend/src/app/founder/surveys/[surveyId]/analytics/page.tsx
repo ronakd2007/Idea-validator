@@ -406,7 +406,7 @@ export default function SurveyAnalyticsPage() {
                 Outcome
                 <select value={outcomeQuestionId} onChange={(e) => setOutcomeQuestionId(e.target.value)} className="ml-2 border border-slate-200 rounded-md text-sm px-2 py-1.5">
                   <option value="">Select a question...</option>
-                  {eligibleOutcomeQuestions.map((q: any) => <option key={q.id} value={q.id}>{q.questionText}</option>)}
+                  {eligibleOutcomeQuestions.filter((q: any) => q.id !== segmentQuestionId).map((q: any) => <option key={q.id} value={q.id}>{q.questionText}</option>)}
                 </select>
               </label>
             )}
@@ -429,12 +429,22 @@ export default function SurveyAnalyticsPage() {
                         {s.outcome.type === 'percent' ? `${s.outcome.value.toFixed(0)}%` : `${s.outcome.value.toFixed(1)}/${s.outcome.max}`}
                       </p>
                     )}
+                    {s.outcome?.type === 'distribution' && s.outcome.items.length > 0 && (
+                      <div className="space-y-1">
+                        {s.outcome.items.map((it: any) => (
+                          <div key={it.label} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="text-slate-600 truncate">{it.label}</span>
+                            <span className="font-semibold text-blue-600 shrink-0">{it.pct.toFixed(0)}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
-              {eligibleOutcomeQuestions.length === 0 && (
+              {!outcomeQuestionId && eligibleOutcomeQuestions.filter((q: any) => q.id !== segmentQuestionId).length > 0 && (
                 <p className="text-xs text-slate-400 mt-3">
-                  Segments show response counts only — add a Yes/No, Rating, or Linear Scale question to your survey to compare an outcome (e.g. &ldquo;% who said Yes&rdquo;) across segments.
+                  Pick an Outcome question above to see how each group answered it.
                 </p>
               )}
             </div>

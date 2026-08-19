@@ -339,19 +339,43 @@ export class SurveyAnalyticsService {
 
     const segments = Array.from(groups.entries())
       .map(([label, resps]) => {
-        let outcome: { type: 'percent' | 'average'; value: number | null; max?: number } | null = null;
-        if (outcomeQ) {
-          const values = resps
-            .map((r) => {
-              const a = r.answers.find((x: any) => x.questionId === outcomeQ.id);
-              return a ? this.outcomeValue(outcomeQ, this.parseValue(a.value)) : null;
-            })
-            .filter((v): v is number => v != null);
-          if (outcomeQ.type === 'YES_NO') {
-            outcome = { type: 'percent', value: values.length ? (values.reduce((a, b) => a + b, 0) / values.length) * 100 : null };
+        let outcome:
+          | { type: 'percent' | 'average'; value: number | null; max?: number }
+          | { type: 'distribution'; items: { label: string; count: number; pct: number }[] }
+          | null = null;
+        // Same question on both axes is a degenerate cross-tab (every segment
+        // is 100% itself) — treat it as no outcome selected.
+        if (outcomeQ && outcomeQ.id !== segmentQ.id) {
+          if (outcomeQ.type === 'YES_NO' || NUMERIC_TYPES.includes(outcomeQ.type)) {
+            const values = resps
+              .map((r) => {
+                const a = r.answers.find((x: any) => x.questionId === outcomeQ.id);
+                return a ? this.outcomeValue(outcomeQ, this.parseValue(a.value)) : null;
+              })
+              .filter((v): v is number => v != null);
+            if (outcomeQ.type === 'YES_NO') {
+              outcome = { type: 'percent', value: values.length ? (values.reduce((a, b) => a + b, 0) / values.length) * 100 : null };
+            } else {
+              const settings = JSON.parse(outcomeQ.settings || '{}');
+              outcome = { type: 'average', value: this.avg(values), max: settings.max ?? (outcomeQ.type === 'RATING' ? 5 : 10) };
+            }
           } else {
-            const settings = JSON.parse(outcomeQ.settings || '{}');
-            outcome = { type: 'average', value: this.avg(values), max: settings.max ?? (outcomeQ.type === 'RATING' ? 5 : 10) };
+            // Choice-type outcome: how this segment answered the other
+            // question — one cross-tab cell per option.
+            const counts = new Map<string, number>();
+            let answered = 0;
+            resps.forEach((r) => {
+              const a = r.answers.find((x: any) => x.questionId === outcomeQ.id);
+              if (!a) return;
+              const optLabel = this.categoryLabel(outcomeQ, this.parseValue(a.value));
+              if (!optLabel) return;
+              counts.set(optLabel, (counts.get(optLabel) || 0) + 1);
+              answered++;
+            });
+            const items = Array.from(counts.entries())
+              .map(([optLabel, count]) => ({ label: optLabel, count, pct: answered ? (count / answered) * 100 : 0 }))
+              .sort((a, b) => b.count - a.count);
+            outcome = { type: 'distribution', items };
           }
         }
         return { label, responseCount: resps.length, outcome };
@@ -564,11 +588,22 @@ export class SurveyAnalyticsService {
     const questionAnalytics = questions.map((q) => this.analyzeQuestion(q, responses));
     const dropOff = this.computeDropOff(questions, sessions);
 
-    const eligibleOutcomeQuestions = questions.filter((q) => q.type === 'YES_NO' || NUMERIC_TYPES.includes(q.type)).map((q) => ({ id: q.id, questionText: q.questionText, type: q.type }));
+    // Measurable outcomes (binary/numeric) come first so [0] stays a real
+    // metric for insights and AI evidence; other single-choice questions
+    // follow so any two closed questions can be cross-compared.
+    const eligibleOutcomeQuestions = [
+      ...questions.filter((q) => q.type === 'YES_NO' || NUMERIC_TYPES.includes(q.type)),
+      ...questions.filter((q) => CHOICE_TYPES.includes(q.type) && q.type !== 'YES_NO'),
+    ].map((q) => ({ id: q.id, questionText: q.questionText, type: q.type }));
     const eligibleSegmentQuestions = questions.filter((q) => CHOICE_TYPES.includes(q.type)).map((q) => ({ id: q.id, questionText: q.questionText, type: q.type }));
 
     const segmentation = opts.segmentQuestionId ? this.computeSegmentation(questions, responses, opts.segmentQuestionId, opts.outcomeQuestionId) : null;
-    const impact = opts.outcomeQuestionId ? this.computeImpact(questions, responses, opts.outcomeQuestionId) : null;
+    // Correlation math is only meaningful against a binary/numeric outcome;
+    // choice-type outcomes get the segment cross-tab instead.
+    const outcomeQForImpact = opts.outcomeQuestionId ? questions.find((q) => q.id === opts.outcomeQuestionId) : null;
+    const impact = outcomeQForImpact && (outcomeQForImpact.type === 'YES_NO' || NUMERIC_TYPES.includes(outcomeQForImpact.type))
+      ? this.computeImpact(questions, responses, outcomeQForImpact.id)
+      : null;
     const abResults = this.computeABResults(questions, responses);
 
     const insights = this.generateInsights({
