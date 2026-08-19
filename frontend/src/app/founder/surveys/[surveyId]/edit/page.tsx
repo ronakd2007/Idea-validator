@@ -9,6 +9,8 @@ import QuestionEditor from '@/components/survey/QuestionEditor';
 import QuestionInspector from '@/components/survey/QuestionInspector';
 import QuestionPreview from '@/components/survey/QuestionPreview';
 import SurveyQrModal from '@/components/survey/SurveyQrModal';
+import RichTextEditor from '@/components/survey/RichTextEditor';
+import RichDescription from '@/components/survey/RichDescription';
 import { useToast, useConfirm } from '@/components/ui/feedback';
 
 const BLANK_INCENTIVE: IncentiveDraft = { title: '', description: '', numberOfWinners: 1, eligibility: '', closingDate: null, collectContact: true };
@@ -504,14 +506,12 @@ function SurveyBuilderInner() {
                   placeholder="Survey title"
                   className="w-full text-2xl font-bold text-slate-900 border-0 focus:outline-none mb-2 placeholder:text-slate-300"
                 />
-                <textarea
+                <RichTextEditor
                   value={detailsDraft.description}
-                  onChange={(e) => setDetailsDraft({ ...detailsDraft, description: e.target.value })}
+                  onChange={(html) => setDetailsDraft((d) => ({ ...d, description: html }))}
                   placeholder="Description (optional)"
-                  rows={6}
-                  className="w-full text-sm text-slate-600 border border-slate-200 rounded-lg p-3 focus:outline-none focus:border-blue-400"
                 />
-                <p className="text-xs text-slate-400 mt-1">Line breaks appear to respondents exactly as typed. Questions stay locked while the survey is live.</p>
+                <p className="text-xs text-slate-400 mt-1">Formatting appears to respondents exactly as shown. Questions stay locked while the survey is live.</p>
                 <div className="flex gap-2 mt-3">
                   <button onClick={saveDetails} disabled={detailsSaving} className="bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-60">
                     {detailsSaving ? 'Saving...' : 'Save Details'}
@@ -530,7 +530,7 @@ function SurveyBuilderInner() {
                     Edit details
                   </button>
                 </div>
-                {survey.description && <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed break-words">{survey.description}</p>}
+                {survey.description && <RichDescription text={survey.description} className="text-sm text-slate-600" />}
               </>
             )}
           </div>
@@ -604,12 +604,10 @@ function SurveyBuilderInner() {
               placeholder="Survey title"
               className="w-full text-2xl font-bold text-slate-900 border-0 focus:outline-none mb-2 placeholder:text-slate-300"
             />
-            <textarea
+            <RichTextEditor
               value={survey.description}
-              onChange={(e) => setSurvey({ ...survey, description: e.target.value })}
-              placeholder="Description (optional)"
-              rows={2}
-              className="w-full text-sm text-slate-600 border-0 focus:outline-none resize-none placeholder:text-slate-400"
+              onChange={(html) => setSurvey((s) => (s ? { ...s, description: html } : s))}
+              placeholder="Description (optional) — paste from Docs/Word, formatting is kept"
             />
             <div className="flex items-center gap-6 pt-4 mt-2 border-t border-slate-100 flex-wrap">
               <label className="flex items-center gap-2 text-sm text-slate-600">
@@ -736,7 +734,7 @@ function SurveyBuilderInner() {
         <>
           <div className="mb-6">
             <h1 className="text-2xl font-bold text-slate-900 mb-1">{survey.title || 'Untitled survey'}</h1>
-            {survey.description && <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed break-words">{survey.description}</p>}
+            {survey.description && <RichDescription text={survey.description} className="text-sm text-slate-600" />}
           </div>
           <div className="space-y-4">
             {survey.questions.map((q, i) => (

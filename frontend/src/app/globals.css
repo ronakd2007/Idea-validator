@@ -21,6 +21,83 @@ input, textarea, select {
   }
 }
 
+/* Rich survey descriptions — one ruleset styles both the TipTap editor
+   surface and the published rendering (RichDescription), so what the founder
+   sees while editing is what respondents get. pre-wrap is applied per text
+   element (never the container): intentional runs of spaces and blank lines
+   survive, while layout stays responsive and long words still wrap. */
+.rich-desc {
+  overflow-wrap: anywhere;
+}
+.rich-desc p,
+.rich-desc li,
+.rich-desc h2,
+.rich-desc h3 {
+  white-space: pre-wrap;
+}
+.rich-desc p {
+  margin: 0 0 0.5em;
+  line-height: 1.6;
+}
+/* An empty paragraph is a deliberate blank line — keep it visible. */
+.rich-desc p:empty::before {
+  content: "\00a0";
+}
+.rich-desc h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0.9em 0 0.35em;
+}
+.rich-desc h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0.8em 0 0.3em;
+}
+.rich-desc h2:first-child,
+.rich-desc h3:first-child {
+  margin-top: 0;
+}
+.rich-desc ul,
+.rich-desc ol {
+  margin: 0 0 0.6em;
+  padding-left: 1.35rem;
+}
+.rich-desc ul { list-style: disc; }
+.rich-desc ol { list-style: decimal; }
+.rich-desc ul ul { list-style: circle; }
+.rich-desc ol ol { list-style: lower-alpha; }
+.rich-desc li { margin: 0.15em 0; }
+.rich-desc li p { margin: 0; }
+.rich-desc a {
+  color: #2563eb;
+  text-decoration: underline;
+  word-break: break-word;
+}
+.rich-desc strong { font-weight: 700; }
+.rich-desc img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 0.5em 0;
+  display: block;
+}
+.rich-desc hr {
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+  margin: 1em 0;
+}
+.rich-desc blockquote {
+  border-left: 3px solid #e2e8f0;
+  padding-left: 0.85rem;
+  color: #475569;
+  margin: 0.6em 0;
+}
+/* Editor surface: selected image gets a visible ring so delete/replace is obvious. */
+.ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
 /* View-as-User mode: the fixed ADMIN VIEW MODE banner occupies the top 44px
    (h-11). Elements tagged with these classes shift below it so no sticky
    header can slide over or under the banner. The attribute is set on <html>

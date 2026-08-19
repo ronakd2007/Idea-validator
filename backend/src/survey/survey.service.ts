@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException, BadRequestException 
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
+import { sanitizeDescription } from './rich-text.util';
 
 const CHOICE_TYPES = ['MULTIPLE_CHOICE', 'CHECKBOXES', 'DROPDOWN', 'IMAGE_CHOICE'];
 
@@ -48,7 +49,7 @@ export class SurveyService {
     }
 
     const survey = await this.prisma.survey.create({
-      data: { ideaId: ideaId || null, founderId, title: title?.trim() || 'Untitled Survey', description: description || '' },
+      data: { ideaId: ideaId || null, founderId, title: title?.trim() || 'Untitled Survey', description: sanitizeDescription(description) },
       include: this.include,
     });
 
@@ -96,7 +97,7 @@ export class SurveyService {
         where: { id },
         data: {
           ...(title !== undefined ? { title } : {}),
-          ...(description !== undefined ? { description } : {}),
+          ...(description !== undefined ? { description: sanitizeDescription(description) } : {}),
           ...(responseLimit !== undefined ? { responseLimit: responseLimit === null || responseLimit === '' ? null : Number(responseLimit) } : {}),
         },
       });
@@ -110,7 +111,7 @@ export class SurveyService {
         where: { id },
         data: {
           ...(title !== undefined ? { title } : {}),
-          ...(description !== undefined ? { description } : {}),
+          ...(description !== undefined ? { description: sanitizeDescription(description) } : {}),
           ...(responseLimit !== undefined ? { responseLimit: responseLimit === null || responseLimit === '' ? null : Number(responseLimit) } : {}),
           ...(collectEmail !== undefined ? { collectEmail: !!collectEmail } : {}),
         },

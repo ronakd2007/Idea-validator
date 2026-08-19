@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { useAdminGuard } from '@/lib/adminGuard';
 import { formatAnswer, formatDuration, QUALITY_STYLE, QUALITY_LABEL } from '@/lib/surveyAnswers';
 import { CATEGORY_STYLE, SURVEY_STATUS_STYLE, formatDate, formatDateTime, timeAgo } from '@/lib/adminActivity';
+import RichDescription from '@/components/survey/RichDescription';
 
 const TABS = ['Questions', 'Responses', 'Analytics', 'Activity'];
 const PAGE_SIZE = 20;
@@ -135,7 +136,7 @@ export default function AdminSurveyDetailPage() {
       {tab === 'Questions' && (
         <div className="space-y-3">
           {survey.description && (
-            <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-5 text-slate-700">{survey.description}</div>
+            <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-5 text-slate-700"><RichDescription text={survey.description} /></div>
           )}
           {survey.questions.map((q: any, i: number) => (
             <div key={q.id} className="bg-white border border-slate-200 shadow-sm rounded-xl p-5">
