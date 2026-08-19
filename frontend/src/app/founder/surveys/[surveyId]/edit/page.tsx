@@ -52,6 +52,12 @@ function SurveyBuilderInner() {
   const [incentiveError, setIncentiveError] = useState('');
   const [incentiveSavedAt, setIncentiveSavedAt] = useState<number | null>(null);
   const [showIncentive, setShowIncentive] = useState(false);
+  // Live/closed surveys keep questions locked, but title/description stay
+  // editable in place — a typo in the intro shouldn't force a new version
+  // (which would change the public link).
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [detailsDraft, setDetailsDraft] = useState({ title: '', description: '' });
+  const [detailsSaving, setDetailsSaving] = useState(false);
   // 3-pane builder: which question the canvas + inspector focus on.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [navAddOpen, setNavAddOpen] = useState(false);
@@ -178,6 +184,20 @@ function SurveyBuilderInner() {
       setSaveError(err.message);
     } finally {
       setPublishing(false);
+    }
+  };
+
+  const saveDetails = async () => {
+    setDetailsSaving(true);
+    try {
+      const res = await api.updateSurvey(survey.id, { title: detailsDraft.title, description: detailsDraft.description });
+      setSurvey(surveyFromServer(res));
+      setEditingDetails(false);
+      toast.success('Survey details updated.');
+    } catch (err: any) {
+      toast.error(err.message || 'Could not update the details.');
+    } finally {
+      setDetailsSaving(false);
     }
   };
 
@@ -475,8 +495,44 @@ function SurveyBuilderInner() {
       {survey.status !== 'DRAFT' ? (
         <>
           <div className="mb-6">
-            <h1 className="text-2xl font-bold text-slate-900 mb-1">{survey.title || 'Untitled survey'}</h1>
-            {survey.description && <p className="text-sm text-slate-600">{survey.description}</p>}
+            {editingDetails ? (
+              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+                <input
+                  type="text"
+                  value={detailsDraft.title}
+                  onChange={(e) => setDetailsDraft({ ...detailsDraft, title: e.target.value })}
+                  placeholder="Survey title"
+                  className="w-full text-2xl font-bold text-slate-900 border-0 focus:outline-none mb-2 placeholder:text-slate-300"
+                />
+                <textarea
+                  value={detailsDraft.description}
+                  onChange={(e) => setDetailsDraft({ ...detailsDraft, description: e.target.value })}
+                  placeholder="Description (optional)"
+                  rows={6}
+                  className="w-full text-sm text-slate-600 border border-slate-200 rounded-lg p-3 focus:outline-none focus:border-blue-400"
+                />
+                <p className="text-xs text-slate-400 mt-1">Line breaks appear to respondents exactly as typed. Questions stay locked while the survey is live.</p>
+                <div className="flex gap-2 mt-3">
+                  <button onClick={saveDetails} disabled={detailsSaving} className="bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-60">
+                    {detailsSaving ? 'Saving...' : 'Save Details'}
+                  </button>
+                  <button onClick={() => setEditingDetails(false)} className="text-sm text-slate-600 px-4 py-2 rounded-lg border border-slate-200 hover:border-slate-300">Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-start justify-between gap-3">
+                  <h1 className="text-2xl font-bold text-slate-900 mb-1">{survey.title || 'Untitled survey'}</h1>
+                  <button
+                    onClick={() => { setDetailsDraft({ title: survey.title, description: survey.description }); setEditingDetails(true); }}
+                    className="shrink-0 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Edit details
+                  </button>
+                </div>
+                {survey.description && <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed break-words">{survey.description}</p>}
+              </>
+            )}
           </div>
           <div className="space-y-4">
             {survey.questions.map((q, i) => (
@@ -680,7 +736,7 @@ function SurveyBuilderInner() {
         <>
           <div className="mb-6">
             <h1 className="text-2xl font-bold text-slate-900 mb-1">{survey.title || 'Untitled survey'}</h1>
-            {survey.description && <p className="text-sm text-slate-600">{survey.description}</p>}
+            {survey.description && <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed break-words">{survey.description}</p>}
           </div>
           <div className="space-y-4">
             {survey.questions.map((q, i) => (

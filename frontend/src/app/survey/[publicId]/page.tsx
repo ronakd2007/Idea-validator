@@ -20,6 +20,16 @@ function emailFromCredential(credential: string): string | null {
 
 type PageState = 'loading' | 'not_found' | 'closed' | 'limit_reached' | 'submitted' | 'ready' | 'error';
 
+// Founder-written description: pasted URLs become real links instead of
+// dead text (split keeps the captured URLs in the array).
+function linkify(text: string) {
+  return text.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
+    /^https?:\/\//.test(part)
+      ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline break-all">{part}</a>
+      : part
+  );
+}
+
 function sessionKey(publicId: string) {
   return `iv_survey_session_${publicId}`;
 }
@@ -298,7 +308,9 @@ export default function PublicSurveyPage() {
       <div className="max-w-xl mx-auto">
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 sm:p-8 mb-6 text-center">
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">{survey.title}</h1>
-          {survey.description && <p className="text-sm text-slate-600 mb-3">{survey.description}</p>}
+          {/* Left-aligned with line breaks preserved — a centered wall of
+              text is unreadable on mobile for anything past one sentence. */}
+          {survey.description && <p className="text-sm text-slate-600 mb-3 text-left whitespace-pre-line leading-relaxed break-words">{linkify(survey.description)}</p>}
           <p className="text-xs text-slate-400">~{estimateMinutes} minute{estimateMinutes !== 1 ? 's' : ''}</p>
 
           {survey.incentive && (

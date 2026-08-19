@@ -80,9 +80,30 @@ export class SurveyService {
 
   async update(id: string, founderId: string, data: any) {
     const existing = await this.findOwned(id, founderId);
-    if (existing.status !== 'DRAFT') throw new ForbiddenException('Cannot edit a survey that is not a draft');
 
     const { title, description, questions, responseLimit, collectEmail } = data;
+
+    // Live/closed surveys: questions are locked to protect existing responses
+    // (that's what Edit (New Version) is for), but display details that can't
+    // affect answers — title, description, response limit — stay editable.
+    // collectEmail stays locked too: flipping it mid-collection would mix
+    // identified and anonymous responses in one dataset.
+    if (existing.status !== 'DRAFT') {
+      if (questions !== undefined || collectEmail !== undefined) {
+        throw new ForbiddenException('Questions can only be edited on a draft — use Edit (New Version) to change them.');
+      }
+      await this.prisma.survey.update({
+        where: { id },
+        data: {
+          ...(title !== undefined ? { title } : {}),
+          ...(description !== undefined ? { description } : {}),
+          ...(responseLimit !== undefined ? { responseLimit: responseLimit === null || responseLimit === '' ? null : Number(responseLimit) } : {}),
+        },
+      });
+      const updated = await this.findOwned(id, founderId);
+      await this.logSurvey('SURVEY_UPDATED', updated, founderId, { detailsOnly: true });
+      return updated;
+    }
 
     await this.prisma.$transaction(async (tx) => {
       await tx.survey.update({
