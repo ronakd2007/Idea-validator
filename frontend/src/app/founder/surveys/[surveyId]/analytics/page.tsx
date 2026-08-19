@@ -187,7 +187,10 @@ export default function SurveyAnalyticsPage() {
   useEffect(() => {
     setLoading(true);
     api.getSurveyAnalytics(surveyId, { range, outcomeQuestionId: outcomeQuestionId || undefined, segmentQuestionId: segmentQuestionId || undefined })
-      .then(setData)
+      // Clear any stale error on success — otherwise one transient failure
+      // (e.g. a filter change against a cold backend) permanently replaced
+      // the whole page with the error panel even though data was loaded.
+      .then((d) => { setData(d); setError(''); })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
     api.getSurveyVersions(surveyId).then(setVersions).catch(() => {});
@@ -214,7 +217,9 @@ export default function SurveyAnalyticsPage() {
   };
 
   if (loading && !data) return <div className="flex items-center justify-center min-h-screen"><div className="text-slate-500">Loading analytics...</div></div>;
-  if (error || !data) return <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error || 'Not found'}</div></div>;
+  // Full-page error only when nothing has loaded; a failed refetch keeps the
+  // last good data on screen with a banner instead of blanking the page.
+  if (!data) return <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10"><div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4">{error || 'Not found'}</div></div>;
 
   const { survey, summary, trend, activity, time, questions, dropOff, quality, eligibleOutcomeQuestions, eligibleSegmentQuestions, segmentation, impact, abResults, insights, sampleSizeLabel } = data;
 
@@ -227,6 +232,12 @@ export default function SurveyAnalyticsPage() {
           {exporting ? 'Exporting...' : 'Export Responses'}
         </button>
       </div>
+
+      {error && (
+        <div className="bg-amber-50 text-amber-800 border border-amber-200 rounded-lg px-4 py-2.5 text-sm mb-4">
+          Couldn&apos;t refresh: {error} — showing the last loaded data.
+        </div>
+      )}
 
       <div className="mb-8">
         <p className="text-xs font-medium text-blue-600 uppercase tracking-wide mb-1">{survey.ideaTitle || 'Standalone survey'}</p>
@@ -401,7 +412,11 @@ export default function SurveyAnalyticsPage() {
             )}
           </div>
 
-          {segmentation && (
+          {segmentation && segmentation.segments.length === 0 && (
+            <p className="text-sm text-slate-500 mb-6">No responses have answered that question yet.</p>
+          )}
+
+          {segmentation && segmentation.segments.length > 0 && (
             <div className="mb-6">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Segment Performance</p>
               <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
@@ -417,6 +432,11 @@ export default function SurveyAnalyticsPage() {
                   </div>
                 ))}
               </div>
+              {eligibleOutcomeQuestions.length === 0 && (
+                <p className="text-xs text-slate-400 mt-3">
+                  Segments show response counts only — add a Yes/No, Rating, or Linear Scale question to your survey to compare an outcome (e.g. &ldquo;% who said Yes&rdquo;) across segments.
+                </p>
+              )}
             </div>
           )}
 
