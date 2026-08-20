@@ -336,6 +336,14 @@ model Survey {
   description   String    @default("")
   status        String    @default("DRAFT")
   publicId      String?   @unique // set on publish; non-guessable, safe to share, never the internal cuid
+  // Public results link — a SEPARATE token from publicId so revoking the
+  // report never breaks the response-collection link (and vice versa).
+  // Deliberately not @unique: adding a unique index to a populated table makes
+  // `prisma db push` demand --accept-data-loss, which would fail the Render
+  // build (see Idea.publicId). Uniqueness is enforced when minting the token.
+  shareId       String?
+  shareEnabled  Boolean   @default(false)
+  shareSettings String    @default("{}") // JSON section toggles, see survey-share.util REPORT_SHARE_DEFAULTS
   responseLimit Int?
   collectEmail  Boolean   @default(false) // optional self-reported email field on the public form — not a verified/authenticated identity
   // RETIRED (2026-08-16): Focus Mode was removed entirely. Nothing reads or
@@ -359,6 +367,7 @@ model Survey {
 
   @@index([founderId])
   @@index([ideaId])
+  @@index([shareId])
 }
 
 model SurveyQuestion {

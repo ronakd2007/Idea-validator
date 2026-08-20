@@ -149,6 +149,15 @@ export const api = {
     if (!res.ok) throw new Error('Export failed');
     return res.text();
   },
+  // Public results link — owner controls. The link itself is read through the
+  // unauthenticated getPublicSurveyReport* helpers below.
+  getSurveyShare: (id: string) => request(`/surveys/${id}/share`),
+  enableSurveyShare: (id: string, settings?: any) =>
+    request(`/surveys/${id}/share`, { method: 'POST', body: JSON.stringify({ settings }) }),
+  updateSurveyShareSettings: (id: string, settings: any) =>
+    request(`/surveys/${id}/share`, { method: 'PATCH', body: JSON.stringify({ settings }) }),
+  disableSurveyShare: (id: string) => request(`/surveys/${id}/share`, { method: 'DELETE' }),
+
   createSurveyVersion: (id: string) => request(`/surveys/${id}/versions`, { method: 'POST' }),
   getSurveyVersions: (id: string) => request(`/surveys/${id}/versions`),
   upsertSurveyIncentive: (id: string, body: any) => request(`/surveys/${id}/incentive`, { method: 'PATCH', body: JSON.stringify(body) }),
@@ -164,6 +173,21 @@ export const api = {
     request(`/public/surveys/${publicId}/responses`, { method: 'POST', body: JSON.stringify(body) }),
   submitIncentiveEntry: (publicId: string, name: string, contact: string) =>
     request(`/public/surveys/${publicId}/incentive-entry`, { method: 'POST', body: JSON.stringify({ name, contact }) }),
+
+  // Public survey results (unauthenticated — anyone with the share link)
+  getPublicSurveyReport: (shareId: string, opts: { range?: string } = {}) =>
+    request(`/public/survey-reports/${shareId}${opts.range ? `?range=${encodeURIComponent(opts.range)}` : ''}`),
+  getPublicSurveyReportQuestions: (shareId: string) => request(`/public/survey-reports/${shareId}/questions`),
+  getPublicSurveyReportResponses: (shareId: string, opts: { page?: number; pageSize?: number; quality?: string; search?: string; questionId?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.page) params.set('page', String(opts.page));
+    if (opts.pageSize) params.set('pageSize', String(opts.pageSize));
+    if (opts.quality) params.set('quality', opts.quality);
+    if (opts.search) params.set('search', opts.search);
+    if (opts.questionId) params.set('questionId', opts.questionId);
+    const qs = params.toString();
+    return request(`/public/survey-reports/${shareId}/responses${qs ? `?${qs}` : ''}`);
+  },
 
   // Admin
   getAnalytics: () => request('/admin/analytics'),

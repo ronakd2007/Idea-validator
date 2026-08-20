@@ -28,6 +28,8 @@ export const ACTION_CATALOG: Record<string, { category: string; label: string }>
   SURVEY_CLOSED: { category: 'SURVEYS', label: 'Closed survey' },
   SURVEY_REOPENED: { category: 'SURVEYS', label: 'Reopened survey' },
   SURVEY_DELETED: { category: 'SURVEYS', label: 'Deleted survey' },
+  SURVEY_REPORT_SHARED: { category: 'SURVEYS', label: 'Shared survey results publicly' },
+  SURVEY_REPORT_UNSHARED: { category: 'SURVEYS', label: 'Stopped sharing survey results' },
 
   // Surveys (respondent side — always anonymous, never tied to an account)
   SURVEY_OPENED: { category: 'RESPONSES', label: 'Opened survey' },

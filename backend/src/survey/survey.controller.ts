@@ -61,6 +61,32 @@ export class SurveyController {
     return this.surveyService.reopen(id, req.user.userId);
   }
 
+  // Public results link — read/enable/update/revoke. The link itself is served
+  // unauthenticated by PublicSurveyReportController.
+  @Get(':id/share')
+  @Roles('FOUNDER')
+  getShare(@Param('id') id: string, @Request() req) {
+    return this.surveyService.getShare(id, req.user.userId);
+  }
+
+  @Post(':id/share')
+  @Roles('FOUNDER')
+  enableShare(@Param('id') id: string, @Request() req, @Body() body: any) {
+    return this.surveyService.enableShare(id, req.user.userId, body?.settings);
+  }
+
+  @Patch(':id/share')
+  @Roles('FOUNDER')
+  updateShare(@Param('id') id: string, @Request() req, @Body() body: any) {
+    return this.surveyService.updateShareSettings(id, req.user.userId, body?.settings);
+  }
+
+  @Delete(':id/share')
+  @Roles('FOUNDER')
+  disableShare(@Param('id') id: string, @Request() req) {
+    return this.surveyService.disableShare(id, req.user.userId);
+  }
+
   @Get(':id/responses')
   @Roles('FOUNDER')
   getResponses(

@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
 import { sanitizeDescription } from './rich-text.util';
+import { parseReportShareSettings, sanitizeReportShareSettings } from './survey-share.util';
 
 const CHOICE_TYPES = ['MULTIPLE_CHOICE', 'CHECKBOXES', 'DROPDOWN', 'IMAGE_CHOICE'];
 
@@ -205,6 +206,64 @@ export class SurveyService {
       }
     });
     return errors;
+  }
+
+  // ---------- public results link ----------
+
+  // 18 bytes (vs 9 for the collection link) — this token guards aggregate
+  // results, so it is worth making brute-force enumeration hopeless.
+  private async uniqueShareId(): Promise<string> {
+    for (let i = 0; i < 5; i++) {
+      const id = randomBytes(18).toString('base64url');
+      const exists = await this.prisma.survey.findFirst({ where: { shareId: id }, select: { id: true } });
+      if (!exists) return id;
+    }
+    throw new Error('Could not generate a unique share id');
+  }
+
+  private shareState(survey: { shareId: string | null; shareEnabled: boolean; shareSettings: string }) {
+    return {
+      shareId: survey.shareId,
+      shareEnabled: survey.shareEnabled,
+      shareSettings: parseReportShareSettings(survey.shareSettings),
+    };
+  }
+
+  async getShare(id: string, founderId: string) {
+    const survey = await this.findOwned(id, founderId);
+    return this.shareState(survey);
+  }
+
+  async enableShare(id: string, founderId: string, settings?: any) {
+    const survey = await this.findOwned(id, founderId);
+    const shareId = survey.shareId || (await this.uniqueShareId());
+    const merged = { ...parseReportShareSettings(survey.shareSettings), ...sanitizeReportShareSettings(settings) };
+    const updated = await this.prisma.survey.update({
+      where: { id },
+      data: { shareId, shareEnabled: true, shareSettings: JSON.stringify(merged) },
+      select: { shareId: true, shareEnabled: true, shareSettings: true },
+    });
+    await this.logSurvey('SURVEY_REPORT_SHARED', survey, founderId);
+    return this.shareState(updated);
+  }
+
+  async updateShareSettings(id: string, founderId: string, settings: any) {
+    const survey = await this.findOwned(id, founderId);
+    const merged = { ...parseReportShareSettings(survey.shareSettings), ...sanitizeReportShareSettings(settings) };
+    const updated = await this.prisma.survey.update({
+      where: { id },
+      data: { shareSettings: JSON.stringify(merged) },
+      select: { shareId: true, shareEnabled: true, shareSettings: true },
+    });
+    return this.shareState(updated);
+  }
+
+  // Disabling keeps the shareId, so re-enabling restores the same link.
+  async disableShare(id: string, founderId: string) {
+    const survey = await this.findOwned(id, founderId);
+    await this.prisma.survey.update({ where: { id }, data: { shareEnabled: false } });
+    await this.logSurvey('SURVEY_REPORT_UNSHARED', survey, founderId);
+    return { success: true };
   }
 
   private generatePublicId() {

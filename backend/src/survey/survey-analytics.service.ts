@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { parseReportShareSettings } from './survey-share.util';
 
 /**
  * Response Quality thresholds — product guidance, not statistical law.
@@ -695,6 +696,98 @@ export class SurveyAnalyticsService {
     }));
 
     return { responses: pageRows, total, page, pageSize };
+  }
+
+  // ---------- public results link ----------
+
+  /**
+   * Resolves a share token to a survey the owner has explicitly published
+   * results for. Anything not shared — or unshared since — is a 404, never a
+   * hint that the survey exists.
+   */
+  private async loadShared(shareId: string) {
+    const survey = await this.prisma.survey.findFirst({
+      where: { shareId, shareEnabled: true },
+      select: { id: true, title: true, status: true, shareSettings: true, idea: { select: { title: true } } },
+    });
+    if (!survey) throw new NotFoundException('This results page is not available');
+    return { survey, settings: parseReportShareSettings(survey.shareSettings) };
+  }
+
+  /**
+   * Public results payload. Sections the founder switched off are deleted
+   * from the response rather than hidden client-side, and respondent
+   * identities never appear here at all.
+   */
+  async getPublicReport(shareId: string, opts: { range?: string } = {}) {
+    const { survey, settings } = await this.loadShared(shareId);
+    const full = await this.getAnalytics(survey.id, null, { range: opts.range });
+
+    const payload: any = {
+      survey: { title: full.survey.title, status: full.survey.status, ideaTitle: full.survey.ideaTitle },
+      settings,
+      sampleSizeLabel: full.sampleSizeLabel,
+      // Response count is the one number that frames everything else, so it
+      // stays even when the summary block is hidden.
+      totalResponses: full.summary.totalResponses,
+    };
+
+    if (settings.showSummary) {
+      payload.summary = full.summary;
+      payload.activity = full.activity;
+      payload.time = full.time;
+    }
+    if (settings.showCharts) {
+      payload.trend = full.trend;
+      payload.questions = full.questions;
+      payload.dropOff = full.dropOff;
+      payload.insights = full.insights;
+      payload.abResults = full.abResults;
+      payload.eligibleOutcomeQuestions = full.eligibleOutcomeQuestions;
+      payload.eligibleSegmentQuestions = full.eligibleSegmentQuestions;
+    }
+    if (settings.showQuality) {
+      payload.quality = full.quality;
+    }
+    return payload;
+  }
+
+  /**
+   * Public response browser. Mirrors getResponsesPage but strips every
+   * respondent identifier: emails are personal data of third parties who
+   * answered a private survey, and must never appear on a public link.
+   */
+  async getPublicResponses(shareId: string, opts: { page?: number; pageSize?: number; quality?: string; search?: string; questionId?: string }) {
+    const { survey, settings } = await this.loadShared(shareId);
+    if (!settings.showResponses) throw new NotFoundException('Individual responses are not shared for this survey');
+
+    const page = await this.getResponsesPage(survey.id, null, opts);
+    return {
+      ...page,
+      responses: page.responses.map((r) => {
+        const { respondentEmail, respondentEmailVerified, ...rest } = r as any;
+        return settings.showQuality ? rest : { ...rest, quality: undefined };
+      }),
+    };
+  }
+
+  // Questions without answer data — the public response browser needs labels
+  // and option text to render answers, but nothing owner-only.
+  async getPublicQuestions(shareId: string) {
+    const { survey } = await this.loadShared(shareId);
+    const questions = await this.prisma.surveyQuestion.findMany({
+      where: { surveyId: survey.id },
+      orderBy: { order: 'asc' },
+      include: { options: { orderBy: { order: 'asc' } } },
+    });
+    return questions.map((q) => ({
+      id: q.id,
+      type: q.type,
+      questionText: q.questionText,
+      description: q.description,
+      settings: q.settings,
+      options: q.options.map((o) => ({ id: o.id, label: o.label, imageUrl: o.imageUrl })),
+    }));
   }
 
   async exportCsv(id: string, ownerId: string | null): Promise<string> {
