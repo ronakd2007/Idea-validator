@@ -493,15 +493,21 @@ export default function SurveyAnalyticsPage() {
         </div>
       )}
 
-      {/* Drop-off */}
-      {dropOff.length > 1 && (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mb-6">
-          <h3 className="font-semibold text-slate-900 mb-1">Question Drop-off</h3>
-          <p className="text-xs text-slate-500 mb-4">
-            How far respondents get before giving up. A steep fall after one question usually means that question is
-            confusing, too personal, or too much effort — fixing it is the fastest way to get more complete responses.
+      {/* Drop-off — the card is always visible; it shows an empty state until
+          someone actually starts answering, so the feature stays discoverable. */}
+      <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mb-6">
+        <h3 className="font-semibold text-slate-900 mb-1">Question Drop-off</h3>
+        <p className="text-xs text-slate-500 mb-4">
+          How far respondents get before giving up. A steep fall after one question usually means that question is
+          confusing, too personal, or too much effort — fixing it is the fastest way to get more complete responses.
+        </p>
+        {dropOff.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            No one has started answering yet. This chart appears once a respondent answers at least one question —
+            people who only open the link without answering anything are not counted.
           </p>
-          {(() => {
+        ) : (
+          (() => {
             // The story is the biggest single fall, not the absolute heights —
             // so find it, paint that step red, and say it in words.
             let worstIdx = -1, worstDrop = 0;
@@ -529,9 +535,9 @@ export default function SurveyAnalyticsPage() {
                 )}
               </>
             );
-          })()}
-        </div>
-      )}
+          })()
+        )}
+      </div>
 
       {/* Per-question analytics */}
       <div className="space-y-4">
