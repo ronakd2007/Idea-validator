@@ -5,7 +5,14 @@ import { SurveyAnalyticsService } from '../survey/survey-analytics.service';
 
 const CHOICE_TYPES = ['MULTIPLE_CHOICE', 'CHECKBOXES', 'DROPDOWN'];
 const KNOWN_TYPES = ['SHORT_ANSWER', 'PARAGRAPH', 'MULTIPLE_CHOICE', 'CHECKBOXES', 'DROPDOWN', 'YES_NO', 'RATING', 'LINEAR_SCALE'];
-const MAX_INPUT_LINES = 40;
+// Caps are character-based, not line-based: a pasted survey legitimately has
+// several lines PER question (the question plus its answer options), so a
+// line cap silently amputated everything after ~7 questions.
+const MAX_INPUT_CHARS = 12000;
+const MAX_QUESTIONS = 40;
+// Groq's free tier enforces 8000 tokens/minute PER REQUEST, and max_tokens
+// counts toward it — prompt estimate + output budget must stay under this.
+const GROQ_TPM_BUDGET = 7500;
 
 export interface GeneratedQuestion {
   questionText: string;
@@ -70,6 +77,9 @@ export class AiService {
     }
     if (status === 429) {
       return new ServiceUnavailableException('AI service is rate limited right now — try again in a minute.');
+    }
+    if (status === 413) {
+      return new ServiceUnavailableException('That text is too long for the AI service in one go — paste fewer questions at once.');
     }
     if ((status === 400 || status === 404) && /model|decommission/i.test(err?.message || '')) {
       return new ServiceUnavailableException('The configured AI model is no longer available — the model name needs updating.');
@@ -495,19 +505,25 @@ Return ONLY a single JSON object, no commentary, matching exactly:
   async generateSurveyFromText(rawText: string): Promise<{ title: string; description: string; questions: GeneratedQuestion[]; truncated: boolean }> {
     if (!rawText || !rawText.trim()) throw new BadRequestException('Paste or upload at least one question');
 
-    const lines = rawText
-      .split('\n')
-      .map((l) => l.replace(/^[\s•\-*\d.)]+/, '').trim())
-      .filter(Boolean);
-    if (!lines.length) throw new BadRequestException('No questions found in that text');
+    // The paste is handed to the model with its structure INTACT — bullets,
+    // numbering, blank lines. Options belong to the question above them, and
+    // stripping markers here (as this used to) makes every option line look
+    // like a question of its own.
+    const trimmedText = rawText.replace(/\r\n/g, '\n').trim();
+    if (!trimmedText) throw new BadRequestException('No questions found in that text');
 
-    const truncated = lines.length > MAX_INPUT_LINES;
-    const usedLines = lines.slice(0, MAX_INPUT_LINES);
+    const truncated = trimmedText.length > MAX_INPUT_CHARS;
+    const usedText = truncated ? trimmedText.slice(0, MAX_INPUT_CHARS) : trimmedText;
 
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) throw new ServiceUnavailableException('Groq API key not configured');
 
-    const prompt = this.buildSurveyPrompt(usedLines.join('\n'));
+    const prompt = this.buildSurveyPrompt(usedText);
+    // Fit the output budget to what the free tier leaves after the prompt
+    // (~4 chars/token estimate + margin). A long paste gets a smaller budget
+    // rather than a 413; the floor still covers a typical survey's JSON.
+    const promptTokensEstimate = Math.ceil(prompt.length / 4) + 250;
+    const maxTokens = Math.max(2600, Math.min(5000, GROQ_TPM_BUDGET - promptTokensEstimate));
     const groq = new Groq({ apiKey });
 
     let raw: any;
@@ -518,7 +534,10 @@ Return ONLY a single JSON object, no commentary, matching exactly:
           model: 'openai/gpt-oss-120b',
           messages: [{ role: 'user', content: attempt === 0 ? prompt : `${prompt}\n\nReturn ONLY the JSON object. No commentary, no markdown fences.` }],
           temperature: 0.3,
-          max_tokens: 3500,
+          // A full pasted survey (dozens of questions, each with options)
+          // serializes to far more JSON than the old one-line-per-question
+          // input ever did — a fixed 3500 silently cut long surveys mid-array.
+          max_tokens: maxTokens,
           reasoning_effort: 'low',
           response_format: { type: 'json_object' },
         });
@@ -537,33 +556,39 @@ Return ONLY a single JSON object, no commentary, matching exactly:
   }
 
   private buildSurveyPrompt(questionLines: string): string {
-    return `You are the form-building engine behind an existing survey product. A user has pasted a list of survey questions. Read each one and decide the single best field type for it — the user should never have to pick a type themselves.
+    return `You are the form-building engine behind an existing survey product. A user has pasted survey text. It may be a bare list of questions, OR a full survey draft: numbered questions, each followed by its answer options on the lines below (marked with *, -, •, letters, or numbers), plus section headings and instruction notes. Convert it faithfully into a structured form — the user should never have to pick a type or retype an option themselves.
 
 SUPPORTED TYPES (use exactly these names):
 - SHORT_ANSWER    one line of free text
 - PARAGRAPH       multiple lines of free text
 - MULTIPLE_CHOICE one answer from a small closed list (2-6 options)
 - CHECKBOXES      multiple answers from a closed list
-- DROPDOWN        one answer from a longer closed list (6+ options)
+- DROPDOWN        one answer from a longer closed list (7+ options)
 - YES_NO          binary yes/no question
 - LINEAR_SCALE     a numbered scale ("rate 1 to 10")
 - RATING          a satisfaction/star-style rating with no stated numbers
 
 RULES
-1. Prefer the narrowest type you are CONFIDENT about. If nothing structured clearly fits, use SHORT_ANSWER for a single fact or PARAGRAPH for open reasoning ("why", "describe", "explain").
-2. Only generate "options" when they are common-knowledge or clearly implied by the question (e.g. social platforms, frequency ranges, age brackets). NEVER invent options requiring specific facts you cannot know (restaurant names, product names, people's names). When in doubt, use SHORT_ANSWER instead of guessing options.
-3. For LINEAR_SCALE, read min/max directly from the question if stated ("...from 1 to 10" -> min 1, max 10). Otherwise default to min 1, max 10.
-4. For RATING, default max to 5 unless the question implies otherwise.
-5. Mark a question "required" true unless it is clearly optional in tone ("if any", "optional", "feel free to skip").
-6. Skip lines that are not actually questions (section headers, instructions). Do not return a row for them.
-7. Write a short survey "title" and one-sentence "description" summarizing the set of questions as a whole.
+1. Extract EVERY question, in the original order. Never merge, drop, or renumber questions. A numbered line ("3. How do you...") is always a question, never a header.
+2. Lines following a question that look like choices BELONG to that question as its options. Use them EXACTLY as written (minus the bullet/number marker and any trailing blank/underscore run — "Other: ______" becomes "Other"). Never paraphrase, reorder, replace, or drop a pasted option.
+3. Choosing the type when the question HAS pasted options: exactly Yes/No → YES_NO; the question or a nearby note says "Select all", "Select up to N", or similar multi-select wording → CHECKBOXES; otherwise 2-6 options → MULTIPLE_CHOICE, 7+ → DROPDOWN. Keep any "(Select up to 3)" style note as part of questionText.
+4. Choosing the type when the question has NO pasted options: prefer the narrowest type you are CONFIDENT about. SHORT_ANSWER for a single fact or contact detail, PARAGRAPH for open reasoning ("why", "describe", "explain"). Only generate options yourself when they are common knowledge (frequency ranges, age brackets). NEVER invent options requiring facts you cannot know (restaurant names, product names, people's names) — use SHORT_ANSWER instead.
+5. For LINEAR_SCALE, read min/max directly from the question if stated ("...from 1 to 10" -> min 1, max 10). Otherwise default to min 1, max 10.
+6. For RATING, default max to 5 unless the question implies otherwise.
+7. Mark a question "required" true unless it is clearly optional in tone ("if any", "optional", "if interested", "feel free to skip").
+8. Skip section headings, intro paragraphs, and standalone instructions — but never anything that reads as an actual question.
+9. Write a short survey "title" and one-sentence "description" summarizing the set of questions as a whole.
 
 EXAMPLE
-Input: "How often do you order food online?"
-Output type: DROPDOWN, options: ["Never", "Less than once a month", "1-3 times a month", "1-2 times a week", "3+ times a week"]
+Input:
+  2. How often do you order food online?
+  * Never
+  * 1-3 times a month
+  * Weekly
+Output: type MULTIPLE_CHOICE, options exactly ["Never", "1-3 times a month", "Weekly"]
 
-Input: "What's your favorite restaurant in the city?"
-Output type: SHORT_ANSWER, options: [] (never guess restaurant names)
+Input: "What's your favorite restaurant in the city?" (no options follow)
+Output: type SHORT_ANSWER, options: [] (never guess restaurant names)
 
 Return ONLY a single JSON object, no commentary, matching exactly:
 {
@@ -581,7 +606,7 @@ Return ONLY a single JSON object, no commentary, matching exactly:
   ]
 }
 
-QUESTIONS:
+SURVEY TEXT:
 ${questionLines}`;
   }
 
@@ -623,7 +648,7 @@ ${questionLines}`;
         return { questionText: questionText.slice(0, 300), type, options: options.slice(0, 12), required: q?.required !== false, settings };
       })
       .filter((q: GeneratedQuestion | null): q is GeneratedQuestion => q !== null)
-      .slice(0, MAX_INPUT_LINES);
+      .slice(0, MAX_QUESTIONS);
 
     if (!questions.length) throw new ServiceUnavailableException("Couldn't generate a form from that text — try rephrasing or paste fewer questions.");
 
