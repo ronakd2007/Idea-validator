@@ -315,7 +315,13 @@ export class SurveyAnalyticsService {
     // Only sessions where the respondent actually answered something (or
     // submitted). A bare open-and-close never reached Q1 — counting it made
     // one bounce look like a 100-point drop at Question 2.
-    const active = sessions.filter((s) => s.completed || s.engaged);
+    //
+    // lastQuestionIndex > 0 is the legacy equivalent of `engaged`: progress was
+    // only ever reported once an answer existed, so a non-zero index proves
+    // engagement. Sessions predating the `engaged` column have it false, and
+    // without this clause every partial attempt from before that deploy
+    // silently vanished from the chart.
+    const active = sessions.filter((s) => s.completed || s.engaged || s.lastQuestionIndex > 0);
     const started = active.length;
     if (!started) return [];
     return questions.map((q, i) => {
