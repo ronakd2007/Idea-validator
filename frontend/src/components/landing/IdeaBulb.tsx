@@ -10,7 +10,9 @@ import { VALIDATION_NODES, VALIDATION_EDGES, nodeActivation, networkActivation }
 import { activeFrameworkIndex } from './frameworkLayout';
 
 // Smooth, recognisable bulb silhouette: narrow neck, wide round glass dome.
-const GLASS_PROFILE: [number, number][] = [
+// Exported (with the two builders below) so the validator landing's specimen
+// bulb is guaranteed to be the same object, not a near-copy that drifts.
+export const GLASS_PROFILE: [number, number][] = [
   [0.0, -0.58],
   [0.26, -0.56],
   [0.34, -0.48],
@@ -25,7 +27,7 @@ const GLASS_PROFILE: [number, number][] = [
   [0.0, 0.81],
 ];
 
-function latheGeometry(points: [number, number][], segments = 64) {
+export function latheGeometry(points: [number, number][], segments = 64) {
   return new THREE.LatheGeometry(
     points.map(([x, y]) => new THREE.Vector2(x, y)),
     segments
@@ -34,7 +36,7 @@ function latheGeometry(points: [number, number][], segments = 64) {
 
 // Deliberately oversized for a real filament — it fills most of the glass, the
 // way the tall blue LED-style coil does in the reference hero.
-function filamentCurve() {
+export function filamentCurve() {
   const pts: THREE.Vector3[] = [];
   const turns = 5;
   const height = 0.82;

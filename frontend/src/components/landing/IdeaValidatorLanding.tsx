@@ -1,4 +1,5 @@
 'use client';
+import { useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
 import ScrollController from './ScrollController';
@@ -14,11 +15,20 @@ import ScoreReveal from './ScoreReveal';
 import InsightDashboard from './InsightDashboard';
 import FinalMoment from './FinalMoment';
 import { useDeviceCapabilities } from './useDeviceCapabilities';
+import { scrollProgressStore } from './useScrollProgress';
 import { TOTAL_SCROLL_VH } from './sceneConfig';
 
 export default function IdeaValidatorLanding() {
   const { reducedMotion, isMobile } = useDeviceCapabilities();
   const particleCount = isMobile ? 60 : reducedMotion ? 80 : 260;
+
+  useEffect(() => {
+    // the scroll store is a module singleton shared with the gate and the
+    // validator landing — arriving via client navigation from a scrolled page
+    // must not start this story mid-timeline
+    scrollProgressStore.set(0);
+    window.scrollTo(0, 0);
+  }, []);
 
   return (
     <div className="relative bg-[#f8fafc]" style={{ minHeight: `${TOTAL_SCROLL_VH}vh` }}>

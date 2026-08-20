@@ -9,8 +9,10 @@ import { useDeviceCapabilities } from './useDeviceCapabilities';
  * tall spacer that creates scroll distance for the whole experience.
  * Uses Lenis for smooth/cinematic easing normally; falls back to plain
  * native scroll tracking under prefers-reduced-motion (no smoothing).
+ * `totalVh` lets other scroll scenes (the validator landing) reuse this
+ * with their own timeline length; the founder landing passes nothing.
  */
-export default function ScrollController() {
+export default function ScrollController({ totalVh = TOTAL_SCROLL_VH }: { totalVh?: number } = {}) {
   const { reducedMotion } = useDeviceCapabilities();
 
   useEffect(() => {
@@ -60,5 +62,5 @@ export default function ScrollController() {
     };
   }, [reducedMotion]);
 
-  return <div style={{ height: `${TOTAL_SCROLL_VH}vh` }} aria-hidden />;
+  return <div style={{ height: `${totalVh}vh` }} aria-hidden />;
 }
