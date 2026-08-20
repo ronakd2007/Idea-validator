@@ -413,6 +413,11 @@ model SurveySession {
   startedAt         DateTime  @default(now())
   lastActivityAt    DateTime  @default(now())
   lastQuestionIndex Int       @default(0) // highest question index reached — the basis for Phase 3 drop-off analysis
+  // True once the respondent has actually answered something. Distinguishes a
+  // real (partial) attempt from a bare page-open — only engaged or completed
+  // sessions count in drop-off analytics. lastQuestionIndex can't carry this:
+  // 0 means both "answered Q1" and "never touched the form".
+  engaged           Boolean   @default(false)
   submittedAt       DateTime?
   completed         Boolean   @default(false)
   // RETIRED (2026-08-16) alongside Survey.focusMode — see the note there.

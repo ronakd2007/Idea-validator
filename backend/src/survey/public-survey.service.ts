@@ -159,17 +159,27 @@ export class PublicSurveyService {
     if (!survey || !sessionToken) return { success: false };
     const session = await this.prisma.surveySession.findUnique({ where: { token: sessionToken } });
     if (!session || session.surveyId !== survey.id || session.completed) return { success: false };
-    if (questionIndex <= session.lastQuestionIndex) return { success: true };
 
-    // Moving past the first question is what distinguishes "started" from
-    // merely opening the link. Fires at most once per session.
-    if (session.lastQuestionIndex === 0 && questionIndex > 0) {
+    // The client only reports progress once an answer exists, so the first
+    // signal — even for question index 0 — marks the session as engaged.
+    // (Previously answering only Q1 was swallowed by the <= check below and
+    // was indistinguishable from opening the page and leaving.)
+    const advanced = questionIndex > session.lastQuestionIndex;
+    if (session.engaged && !advanced) return { success: true };
+
+    // First real answer distinguishes "started" from merely opening the link.
+    // Fires at most once per session.
+    if (!session.engaged) {
       this.logRespondent('SURVEY_STARTED', survey);
     }
 
     await this.prisma.surveySession.update({
       where: { id: session.id },
-      data: { lastQuestionIndex: questionIndex, lastActivityAt: new Date() },
+      data: {
+        engaged: true,
+        ...(advanced ? { lastQuestionIndex: questionIndex } : {}),
+        lastActivityAt: new Date(),
+      },
     });
     return { success: true };
   }
@@ -297,7 +307,7 @@ export class PublicSurveyService {
 
       await tx.surveySession.update({
         where: { id: session.id },
-        data: { completed: true, submittedAt: new Date(), lastActivityAt: new Date() },
+        data: { completed: true, engaged: true, submittedAt: new Date(), lastActivityAt: new Date() },
       });
     });
 

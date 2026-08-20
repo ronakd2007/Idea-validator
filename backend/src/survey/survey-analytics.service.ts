@@ -312,10 +312,14 @@ export class SurveyAnalyticsService {
   // ---------- drop-off ----------
 
   private computeDropOff(questions: any[], sessions: any[]) {
-    const started = sessions.length;
+    // Only sessions where the respondent actually answered something (or
+    // submitted). A bare open-and-close never reached Q1 — counting it made
+    // one bounce look like a 100-point drop at Question 2.
+    const active = sessions.filter((s) => s.completed || s.engaged);
+    const started = active.length;
     if (!started) return [];
     return questions.map((q, i) => {
-      const reached = sessions.filter((s) => s.completed || s.lastQuestionIndex >= i).length;
+      const reached = active.filter((s) => s.completed || s.lastQuestionIndex >= i).length;
       return { questionText: q.questionText, index: i, reachedCount: reached, reachedPct: (reached / started) * 100 };
     });
   }
