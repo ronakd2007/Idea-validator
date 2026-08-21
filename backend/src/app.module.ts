@@ -16,6 +16,7 @@ import { SurveyModule } from './survey/survey.module';
 import { ChatModule } from './chat/chat.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { StartupsModule } from './startups/startups.module';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { StartupsModule } from './startups/startups.module';
     UploadsModule,
     StartupsModule,
   ],
+  controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule implements NestModule {
