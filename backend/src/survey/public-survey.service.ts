@@ -285,31 +285,41 @@ export class PublicSurveyService {
     const errors = this.validateAnswers(seenQuestions, rawAnswers || []);
     if (errors.length) throw new BadRequestException({ message: 'Validation failed', errors });
 
-    await this.prisma.$transaction(async (tx) => {
-      const response = await tx.surveyResponse.create({
-        data: {
-          surveyId: survey.id,
-          sessionId: session.id,
-          respondentEmail: email,
-          respondentEmailVerified: emailVerified,
-        },
-      });
-
-      const seenIds = new Set(seenQuestions.map((q) => q.id));
-      for (const a of rawAnswers || []) {
-        if (!seenIds.has(a.questionId)) continue; // never persist an answer for a question this session didn't see
-        const isEmpty = a.value === undefined || a.value === null || a.value === '' || (Array.isArray(a.value) && a.value.length === 0);
-        if (isEmpty) continue;
-        await tx.surveyAnswer.create({
-          data: { responseId: response.id, questionId: a.questionId, value: JSON.stringify(a.value) },
+    await this.prisma.$transaction(
+      async (tx) => {
+        const response = await tx.surveyResponse.create({
+          data: {
+            surveyId: survey.id,
+            sessionId: session.id,
+            respondentEmail: email,
+            respondentEmailVerified: emailVerified,
+          },
         });
-      }
 
-      await tx.surveySession.update({
-        where: { id: session.id },
-        data: { completed: true, engaged: true, submittedAt: new Date(), lastActivityAt: new Date() },
-      });
-    });
+        const seenIds = new Set(seenQuestions.map((q) => q.id));
+        // Answers are inserted in ONE batched round trip rather than one per
+        // answer. This is a respondent losing their whole submission if the
+        // transaction runs long, so the number of sequential round trips here
+        // matters more than anywhere else in the app.
+        const rows = (rawAnswers || [])
+          .filter((a) => {
+            if (!seenIds.has(a.questionId)) return false; // never persist an answer for a question this session didn't see
+            const isEmpty = a.value === undefined || a.value === null || a.value === '' || (Array.isArray(a.value) && a.value.length === 0);
+            return !isEmpty;
+          })
+          .map((a) => ({ responseId: response.id, questionId: a.questionId, value: JSON.stringify(a.value) }));
+        if (rows.length) await tx.surveyAnswer.createMany({ data: rows });
+
+        await tx.surveySession.update({
+          where: { id: session.id },
+          data: { completed: true, engaged: true, submittedAt: new Date(), lastActivityAt: new Date() },
+        });
+      },
+      // Prisma's 5s default would discard a completed submission on a slow
+      // database — the one failure mode in this app that destroys work a real
+      // person already did.
+      { timeout: 30_000, maxWait: 10_000 }
+    );
 
     // Logged after the transaction commits, so the feed can never show a
     // submission that didn't actually persist. Records the count only — never
