@@ -8,6 +8,11 @@
 #
 #     PROD_DATABASE_URL=postgresql://user:pass@host/db?sslmode=require
 #
+# Optionally save straight into a cloud-synced folder. QUOTE any path
+# containing spaces, or the shell splits it and the backup fails:
+#
+#     BACKUP_DIR="/g/My Drive/IdeaValidator-Backups"
+#
 # Get that value from Render: Dashboard -> your Postgres -> "External Database
 # URL". The EXTERNAL one — the internal URL only resolves inside Render.
 #
