@@ -29,7 +29,10 @@ ENV_FILE="$ROOT/.env.production.local"
 # machine automatically — a laptop failure then costs you nothing.
 OUT_DIR="${BACKUP_DIR:-$ROOT/backups}"
 KEEP=14            # retain this many most-recent dumps
-IMAGE="postgres:16-alpine"
+# pg_dump refuses to dump a server newer than itself, and managed providers
+# upgrade Postgres without asking. So ask the server what major version it is
+# and use a matching pg_dump, instead of pinning one that silently expires.
+IMAGE_FALLBACK="postgres:17-alpine"
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "ERROR: $ENV_FILE not found."
@@ -53,6 +56,23 @@ OUT_DIR="${BACKUP_DIR:-$OUT_DIR}"   # re-resolve: BACKUP_DIR may come from the e
 mkdir -p "$OUT_DIR" 2>/dev/null || { echo "ERROR: cannot create $OUT_DIR (is the cloud drive mounted?)"; exit 1; }
 STAMP="$(date -u +%Y%m%d_%H%M%SZ)"
 OUT="$OUT_DIR/ideavalidator_${STAMP}.sql"
+
+# psql tolerates a version mismatch (pg_dump does not), so any image can ask.
+SERVER_MAJOR=$(docker run --rm -i "$IMAGE_FALLBACK" psql -tAc "SHOW server_version;" "$PROD_DATABASE_URL" 2>/dev/null | cut -d. -f1 | tr -d "[:space:]")
+
+if [ -n "$SERVER_MAJOR" ] && [ "$SERVER_MAJOR" -ge 13 ] 2>/dev/null; then
+  IMAGE="postgres:${SERVER_MAJOR}-alpine"
+  echo "Server is PostgreSQL $SERVER_MAJOR — using $IMAGE"
+  if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    docker pull -q "$IMAGE" >/dev/null 2>&1 || {
+      echo "WARNING: could not pull $IMAGE, falling back to $IMAGE_FALLBACK"
+      IMAGE="$IMAGE_FALLBACK"
+    }
+  fi
+else
+  echo "WARNING: could not determine server version; using $IMAGE_FALLBACK"
+  IMAGE="$IMAGE_FALLBACK"
+fi
 
 echo "Dumping production database..."
 # --no-owner/--no-acl keep the dump restorable into a different provider
