@@ -19,7 +19,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$ROOT/.env.production.local"
-OUT_DIR="$ROOT/backups"
+# Where dumps land. Point BACKUP_DIR at a cloud-synced folder (Google Drive,
+# OneDrive) in .env.production.local and every backup is uploaded off this
+# machine automatically — a laptop failure then costs you nothing.
+OUT_DIR="${BACKUP_DIR:-$ROOT/backups}"
 KEEP=14            # retain this many most-recent dumps
 IMAGE="postgres:16-alpine"
 
@@ -41,7 +44,8 @@ if [ -z "${PROD_DATABASE_URL:-}" ]; then
   exit 1
 fi
 
-mkdir -p "$OUT_DIR"
+OUT_DIR="${BACKUP_DIR:-$OUT_DIR}"   # re-resolve: BACKUP_DIR may come from the env file
+mkdir -p "$OUT_DIR" 2>/dev/null || { echo "ERROR: cannot create $OUT_DIR (is the cloud drive mounted?)"; exit 1; }
 STAMP="$(date -u +%Y%m%d_%H%M%SZ)"
 OUT="$OUT_DIR/ideavalidator_${STAMP}.sql"
 
