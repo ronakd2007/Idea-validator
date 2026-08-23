@@ -9,3 +9,8 @@ dist/
 backend/prisma/migrations/
 graphify-out/
 *.tsbuildinfo
+
+# Database dumps contain respondent emails and every survey answer — they must
+# never enter git history. The connection string file is credentials.
+backups/
+.env.production.local
