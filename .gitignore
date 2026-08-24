@@ -14,3 +14,5 @@ graphify-out/
 # never enter git history. The connection string file is credentials.
 backups/
 .env.production.local
+backup.log
+_seed_validators_tmp.ts

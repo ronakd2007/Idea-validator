@@ -20,6 +20,7 @@ export const ACTION_CATALOG: Record<string, { category: string; label: string }>
   IDEA_REVISED: { category: 'IDEAS', label: 'Revised idea' },
   IDEA_SUBMITTED: { category: 'IDEAS', label: 'Submitted idea' },
   IDEA_RESULTS_VIEWED: { category: 'IDEAS', label: 'Viewed validation results' },
+  IDEA_DELETED: { category: 'IDEAS', label: 'Deleted idea' },
 
   // Surveys (founder side)
   SURVEY_CREATED: { category: 'SURVEYS', label: 'Created survey' },

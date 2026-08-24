@@ -37,10 +37,19 @@ export class SurveyController {
     return this.surveyService.update(id, req.user.userId, body);
   }
 
+  // What deleting this survey would destroy — drives the confirmation dialog.
+  @Get(':id/delete-impact')
+  @Roles('FOUNDER')
+  deleteImpact(@Param('id') id: string, @Request() req) {
+    return this.surveyService.deleteImpact(id, req.user.userId);
+  }
+
+  // Body carries confirmTitle, which the service requires once the survey
+  // holds responses.
   @Delete(':id')
   @Roles('FOUNDER')
-  remove(@Param('id') id: string, @Request() req) {
-    return this.surveyService.remove(id, req.user.userId);
+  remove(@Param('id') id: string, @Request() req, @Body() body: any) {
+    return this.surveyService.remove(id, req.user.userId, body?.confirmTitle);
   }
 
   @Post(':id/publish')

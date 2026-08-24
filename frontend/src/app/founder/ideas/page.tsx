@@ -8,6 +8,8 @@ import PageHeader from '@/components/ui/PageHeader';
 import EmptyState from '@/components/ui/EmptyState';
 import StatusBadge, { type BadgeTone } from '@/components/ui/StatusBadge';
 import { SkeletonList } from '@/components/ui/Skeleton';
+import { useToast } from '@/components/ui/feedback';
+import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 
 // One derived, human status per idea — the 2-second read the card leads with.
 function ideaState(idea: any): { label: string; tone: BadgeTone } {
@@ -29,12 +31,46 @@ export default function FounderIdeasPage() {
   const router = useRouter();
   const [ideas, setIdeas] = useState<any[] | null>(null);
   const [creatingSurveyFor, setCreatingSurveyFor] = useState<string | null>(null);
+  const toast = useToast();
+  // Deleting an idea also destroys its surveys and their responses, so the
+  // dialog is driven by a server-computed impact rather than a guess.
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [deleteImpact, setDeleteImpact] = useState<any>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   useEffect(() => {
     const user = getStoredUser();
     if (!user || user.role !== 'FOUNDER') { router.push('/auth/login'); return; }
     api.getMyIdeas().then(setIdeas).catch(() => setIdeas([]));
   }, [router]);
+
+  const askDelete = async (idea: any) => {
+    setDeleteTarget(idea);
+    setDeleteImpact(null);
+    setDeleteError('');
+    try {
+      setDeleteImpact(await api.getIdeaDeleteImpact(idea.id));
+    } catch (err: any) {
+      setDeleteError(err.message || 'Could not check what this would delete.');
+    }
+  };
+
+  const doDelete = async (confirmTitle: string) => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await api.deleteMyIdea(deleteTarget.id, confirmTitle);
+      setIdeas((prev) => (prev ?? []).filter((x) => x.id !== deleteTarget.id));
+      toast.success('Idea deleted.');
+      setDeleteTarget(null);
+    } catch (err: any) {
+      setDeleteError(err.message || 'Could not delete the idea.');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const createMassSurvey = async (idea: any) => {
     setCreatingSurveyFor(idea.id);
@@ -123,12 +159,41 @@ export default function FounderIdeasPage() {
                   >
                     {creatingSurveyFor === idea.id ? 'Creating…' : 'Create Survey'}
                   </button>
+                  <button
+                    onClick={() => askDelete(idea)}
+                    title="Delete this idea"
+                    className="flex-1 sm:flex-none text-sm bg-white border border-slate-200 text-slate-500 px-4 py-2 rounded-lg hover:border-red-300 hover:text-red-600 text-center transition"
+                  >
+                    Delete
+                  </button>
                 </div>
               </div>
             </div>
           );
         })}
       </div>
+
+      {deleteTarget && (
+        <DeleteConfirmModal
+          title="Delete this idea?"
+          itemName={deleteTarget.title}
+          impact={[
+            { label: 'Expert validations', count: deleteImpact?.validations ?? 0, severe: true },
+            { label: 'Surveys', count: deleteImpact?.surveys ?? 0 },
+            { label: 'Survey responses', count: deleteImpact?.responses ?? 0, severe: true },
+          ]}
+          requiresTitleConfirmation={!!deleteImpact?.requiresTitleConfirmation}
+          busy={deleting}
+          error={deleteError}
+          extraWarning={
+            (deleteImpact?.surveys ?? 0) > 0
+              ? 'Surveys attached to this idea are deleted too, along with every response they hold.'
+              : undefined
+          }
+          onCancel={() => { if (!deleting) { setDeleteTarget(null); setDeleteError(''); } }}
+          onConfirm={doDelete}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
@@ -371,6 +371,71 @@ export class IdeasService {
     });
 
     return revision;
+  }
+
+  /**
+   * What deleting this idea would destroy. Deleting an Idea cascades into its
+   * validations, its surveys, and through those into every survey response and
+   * answer — so the founder is shown the real blast radius before confirming,
+   * not just "are you sure?".
+   */
+  async deleteImpact(ideaId: string, founderId: string) {
+    const idea = await this.findOwned(ideaId, founderId);
+    const [validations, surveys, responses] = await Promise.all([
+      this.prisma.validationResponse.count({ where: { ideaId } }),
+      this.prisma.survey.count({ where: { ideaId } }),
+      this.prisma.surveyResponse.count({ where: { survey: { ideaId } } }),
+    ]);
+    return {
+      title: idea.title,
+      validations,
+      surveys,
+      responses,
+      // Anything irreplaceable present => make the founder type the title.
+      requiresTitleConfirmation: validations > 0 || responses > 0,
+    };
+  }
+
+  /**
+   * Deletes an idea the founder owns, and everything that hangs off it.
+   *
+   * The title guard is enforced here, not only in the dialog, because this one
+   * call can erase expert validations and survey responses that other people
+   * spent real time producing. An id alone should never be enough.
+   */
+  async remove(ideaId: string, founderId: string, confirmTitle?: string) {
+    const idea = await this.findOwned(ideaId, founderId);
+    const impact = await this.deleteImpact(ideaId, founderId);
+
+    if (impact.requiresTitleConfirmation && confirmTitle !== idea.title) {
+      const parts = [
+        impact.validations ? `${impact.validations} expert validation${impact.validations === 1 ? '' : 's'}` : null,
+        impact.surveys ? `${impact.surveys} survey${impact.surveys === 1 ? '' : 's'}` : null,
+        impact.responses ? `${impact.responses} survey response${impact.responses === 1 ? '' : 's'}` : null,
+      ].filter(Boolean).join(', ');
+      throw new BadRequestException(
+        `Deleting this idea will permanently destroy ${parts}. ` +
+          'Re-send the request with the exact idea title as confirmation to proceed.'
+      );
+    }
+
+    await this.prisma.idea.delete({ where: { id: ideaId } });
+
+    const { label, role } = await this.actor(founderId);
+    // targetId/targetLabel are soft references, so this record outlives the row.
+    void this.activity.log({
+      userId: founderId,
+      actorRole: role,
+      actorLabel: label,
+      action: 'IDEA_DELETED',
+      targetType: 'IDEA',
+      targetId: idea.id,
+      targetLabel: idea.title,
+      ownerUserId: founderId,
+      metadata: { ideaId: idea.id, ...impact },
+    });
+
+    return { success: true, deleted: impact };
   }
 
   /**

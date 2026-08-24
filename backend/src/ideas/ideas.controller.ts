@@ -81,6 +81,21 @@ export class IdeasController {
     return this.ideasService.findOne(id, req.user);
   }
 
+  // What deleting this idea would destroy — drives the confirmation dialog.
+  @Get(':id/delete-impact')
+  @Roles('FOUNDER')
+  deleteImpact(@Param('id') id: string, @Request() req) {
+    return this.ideasService.deleteImpact(id, req.user.userId);
+  }
+
+  // Body carries confirmTitle, required by the service once validations or
+  // survey responses exist.
+  @Delete(':id')
+  @Roles('FOUNDER')
+  remove(@Param('id') id: string, @Request() req, @Body() body: any) {
+    return this.ideasService.remove(id, req.user.userId, body?.confirmTitle);
+  }
+
   @Post(':id/revise')
   @Roles('FOUNDER')
   createRevision(@Param('id') id: string, @Request() req, @Body() body: CreateIdeaDto) {

@@ -183,14 +183,44 @@ export class SurveyService {
     return updated;
   }
 
-  async remove(id: string, founderId: string) {
+  /**
+   * Deletes a survey the founder owns, including any responses it holds.
+   *
+   * A draft deletes on a plain confirm. Once real responses exist, deletion
+   * destroys work that respondents already did and cannot be undone, so the
+   * caller must echo back the exact survey title. That guard lives here rather
+   * than only in the dialog: a mis-aimed API call should not be able to erase
+   * collected data just because it knew an id.
+   */
+  async remove(id: string, founderId: string, confirmTitle?: string) {
     const survey = await this.findOwned(id, founderId);
-    if (survey.status !== 'DRAFT') throw new ForbiddenException('Only draft surveys can be deleted');
+    const responseCount = await this.prisma.surveyResponse.count({ where: { surveyId: id } });
+
+    if (responseCount > 0 && confirmTitle !== survey.title) {
+      throw new BadRequestException(
+        `This survey holds ${responseCount} response${responseCount === 1 ? '' : 's'}, which will be permanently deleted. ` +
+          'Re-send the request with the exact survey title as confirmation to proceed.'
+      );
+    }
+
     await this.prisma.survey.delete({ where: { id } });
     // targetId/targetLabel are soft references, so the record of the deletion
     // survives the row it points at.
-    await this.logSurvey('SURVEY_DELETED', survey, founderId);
-    return { success: true };
+    await this.logSurvey('SURVEY_DELETED', survey, founderId, { responseCount, status: survey.status });
+    return { success: true, deletedResponses: responseCount };
+  }
+
+  /** What a delete would destroy — shown in the confirmation dialog. */
+  async deleteImpact(id: string, founderId: string) {
+    const survey = await this.findOwned(id, founderId);
+    const responses = await this.prisma.surveyResponse.count({ where: { surveyId: id } });
+    return {
+      title: survey.title,
+      status: survey.status,
+      responses,
+      questions: survey.questions.length,
+      requiresTitleConfirmation: responses > 0,
+    };
   }
 
   private validateForPublish(survey: any): string[] {

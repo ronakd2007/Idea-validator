@@ -10,6 +10,7 @@ import EmptyState from '@/components/ui/EmptyState';
 import StatusBadge, { STATUS_TONE } from '@/components/ui/StatusBadge';
 import { SkeletonList } from '@/components/ui/Skeleton';
 import { useToast, useConfirm } from '@/components/ui/feedback';
+import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 
 export default function MySurveysPage() {
   const router = useRouter();
@@ -23,6 +24,12 @@ export default function MySurveysPage() {
   const [newTitle, setNewTitle] = useState('');
   const [selectedIdeaId, setSelectedIdeaId] = useState('');
   const [creating, setCreating] = useState(false);
+  // Delete flow: impact is fetched from the server so the dialog states the
+  // real cost (responses lost) rather than a generic warning.
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [deleteImpact, setDeleteImpact] = useState<any>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   useEffect(() => {
     const user = getStoredUser();
@@ -30,6 +37,37 @@ export default function MySurveysPage() {
     api.getMySurveys().then(setSurveys).catch(() => setSurveys([]));
     api.getMyIdeas().then(setIdeas).catch(() => {});
   }, []);
+
+  const askDelete = async (survey: any) => {
+    setDeleteTarget(survey);
+    setDeleteImpact(null);
+    setDeleteError('');
+    try {
+      setDeleteImpact(await api.getSurveyDeleteImpact(survey.id));
+    } catch (err: any) {
+      setDeleteError(err.message || 'Could not check what this would delete.');
+    }
+  };
+
+  const doDelete = async (confirmTitle: string) => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const res = await api.deleteSurvey(deleteTarget.id, confirmTitle);
+      setSurveys((prev) => (prev ?? []).filter((x) => x.id !== deleteTarget.id));
+      toast.success(
+        res?.deletedResponses
+          ? `Survey deleted along with ${res.deletedResponses} response${res.deletedResponses === 1 ? '' : 's'}.`
+          : 'Survey deleted.'
+      );
+      setDeleteTarget(null);
+    } catch (err: any) {
+      setDeleteError(err.message || 'Could not delete the survey.');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const openCreate = () => {
     setNewTitle('');
@@ -234,11 +272,36 @@ export default function MySurveysPage() {
                     Close Survey
                   </button>
                 )}
+                <button onClick={() => askDelete(s)} title="Delete this survey"
+                  className="flex-1 sm:flex-none text-sm bg-white border border-slate-200 text-slate-500 px-3.5 py-1.5 rounded-lg hover:border-red-300 hover:text-red-600 text-center transition">
+                  Delete
+                </button>
               </div>
             </div>
           </div>
         ))}
       </div>
+
+      {deleteTarget && (
+        <DeleteConfirmModal
+          title="Delete this survey?"
+          itemName={deleteTarget.title}
+          impact={[
+            { label: 'Responses collected', count: deleteImpact?.responses ?? deleteTarget._count?.responses ?? 0, severe: true },
+            { label: 'Questions', count: deleteImpact?.questions ?? deleteTarget._count?.questions ?? 0 },
+          ]}
+          requiresTitleConfirmation={!!deleteImpact?.requiresTitleConfirmation}
+          busy={deleting}
+          error={deleteError}
+          extraWarning={
+            (deleteImpact?.responses ?? 0) > 0
+              ? 'Export the responses first if you may need them — this is the only copy.'
+              : undefined
+          }
+          onCancel={() => { if (!deleting) { setDeleteTarget(null); setDeleteError(''); } }}
+          onConfirm={doDelete}
+        />
+      )}
 
       {qrSurvey && (
         <SurveyQrModal

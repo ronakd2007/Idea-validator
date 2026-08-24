@@ -82,6 +82,11 @@ export const api = {
   reviseIdea: (id: string, body: any) => request(`/ideas/${id}/revise`, { method: 'POST', body: JSON.stringify(body) }),
   // Records that the founder generated the PDF; the file itself is built in the browser.
   recordReportDownload: (id: string) => request(`/ideas/${id}/report-downloaded`, { method: 'POST' }),
+  // Deleting an idea cascades into its validations, surveys and responses, so
+  // the server demands confirmTitle once any of those exist.
+  getIdeaDeleteImpact: (id: string) => request(`/ideas/${id}/delete-impact`),
+  deleteMyIdea: (id: string, confirmTitle?: string) =>
+    request(`/ideas/${id}`, { method: 'DELETE', body: JSON.stringify({ confirmTitle }) }),
 
   // Validation
   submitValidation: (ideaId: string, body: any) => request(`/validation/${ideaId}`, { method: 'POST', body: JSON.stringify(body) }),
@@ -117,7 +122,10 @@ export const api = {
   getMySurveys: () => request('/surveys/my'),
   getSurvey: (id: string) => request(`/surveys/${id}`),
   updateSurvey: (id: string, body: any) => request(`/surveys/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  deleteSurvey: (id: string) => request(`/surveys/${id}`, { method: 'DELETE' }),
+  // confirmTitle is required by the server once the survey holds responses.
+  getSurveyDeleteImpact: (id: string) => request(`/surveys/${id}/delete-impact`),
+  deleteSurvey: (id: string, confirmTitle?: string) =>
+    request(`/surveys/${id}`, { method: 'DELETE', body: JSON.stringify({ confirmTitle }) }),
   publishSurvey: (id: string) => request(`/surveys/${id}/publish`, { method: 'POST' }),
   closeSurvey: (id: string) => request(`/surveys/${id}/close`, { method: 'POST' }),
   reopenSurvey: (id: string) => request(`/surveys/${id}/reopen`, { method: 'POST' }),
