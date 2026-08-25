@@ -110,6 +110,12 @@ export default function SurveyAnalyticsPage() {
               {share?.shareEnabled ? '🔗 Results Shared' : 'Share Results'}
             </button>
           )}
+          <Link
+            href={`/founder/surveys/${surveyId}/responses`}
+            className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+          >
+            View Responses{summary.totalResponses ? ` (${summary.totalResponses})` : ''}
+          </Link>
           <button onClick={exportCsv} disabled={exporting} className="text-sm bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:border-slate-300 disabled:opacity-60">
             {exporting ? 'Exporting...' : 'Export Responses'}
           </button>
