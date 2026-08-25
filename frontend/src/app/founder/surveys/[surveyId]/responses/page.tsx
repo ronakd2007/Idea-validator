@@ -155,7 +155,15 @@ function SurveyResponsesInner() {
                 <div className="grid grid-cols-3 gap-4 mb-5 text-center">
                   <div><p className="text-xs text-slate-500">Started</p><p className="text-sm font-medium text-slate-900">{selected.startedAt ? new Date(selected.startedAt).toLocaleTimeString() : '—'}</p></div>
                   <div><p className="text-xs text-slate-500">Submitted</p><p className="text-sm font-medium text-slate-900">{new Date(selected.submittedAt).toLocaleTimeString()}</p></div>
-                  <div><p className="text-xs text-slate-500">Duration</p><p className="text-sm font-medium text-slate-900">{formatDuration(selected.duration)}</p></div>
+                  <div>
+                    <p className="text-xs text-slate-500">Duration</p>
+                    <p
+                      className="text-sm font-medium text-slate-900"
+                      title={selected.durationEstimated ? 'Estimated — this response predates active-time tracking and its recorded time was unusable, so the average of the other responses is shown.' : undefined}
+                    >
+                      {selected.durationEstimated ? `~${formatDuration(selected.duration)}` : formatDuration(selected.duration)}
+                    </p>
+                  </div>
                 </div>
 
                 {selected.respondentEmail && (

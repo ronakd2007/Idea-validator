@@ -17,6 +17,14 @@ const QUALITY = {
   CONSISTENCY_DIFF_RATIO_FLAG: 0.4, // flagged if |a-b| exceeds 40% of the scale range
 };
 
+// Legacy sessions (recorded before active-time heartbeats existed) only have
+// wall-clock duration. Under this limit wall-clock is a fair proxy for effort;
+// beyond it the tab almost certainly sat abandoned, and reporting the number
+// would be reporting the idle — so the duration counts as unmeasurable instead
+// and drops out of every stat (average, median, fastest/longest, quality
+// flags, CSV). The session row itself is untouched.
+const LEGACY_WALLCLOCK_TRUST_LIMIT_SECONDS = 30 * 60;
+
 const MIN_SAMPLE_FOR_ASSOCIATION = 10;
 const MIN_SAMPLE_FOR_AB = 10; // per variant
 
@@ -75,7 +83,39 @@ export class SurveyAnalyticsService {
 
   private durationSeconds(session: any): number | null {
     if (!session || !session.submittedAt) return null;
-    return (new Date(session.submittedAt).getTime() - new Date(session.startedAt).getTime()) / 1000;
+    // Sessions recorded since heartbeat tracking know the time the tab was
+    // actually visible. Legacy sessions only have wall-clock, trusted only
+    // while plausible — see LEGACY_WALLCLOCK_TRUST_LIMIT_SECONDS.
+    if (session.activeSeconds > 0) return session.activeSeconds;
+    const wallClock = (new Date(session.submittedAt).getTime() - new Date(session.startedAt).getTime()) / 1000;
+    return wallClock <= LEGACY_WALLCLOCK_TRUST_LIMIT_SECONDS ? wallClock : null;
+  }
+
+  /**
+   * Average of the durations we actually trust, used to stand in for a legacy
+   * session whose wall-clock is unusable. Substituting the mean is deliberate:
+   * it leaves the mean unchanged, so an abandoned tab stops distorting the
+   * summary while its response still carries a usable number everywhere else.
+   * Always an ESTIMATE — never let it read as a measurement.
+   */
+  private imputedDuration(sessions: any[]): number | null {
+    const trusted = sessions
+      .filter((s) => s?.submittedAt)
+      .map((s) => this.durationSeconds(s))
+      .filter((d): d is number => d != null);
+    return this.avg(trusted);
+  }
+
+  /** True measured duration when there is one, otherwise the imputed average. */
+  private effectiveDuration(session: any, imputed: number | null): number | null {
+    if (!session || !session.submittedAt) return null;
+    return this.durationSeconds(session) ?? imputed;
+  }
+
+  /** Whether this session's reported duration is imputed rather than measured. */
+  private isEstimatedDuration(session: any, imputed: number | null): boolean {
+    if (!session || !session.submittedAt) return false;
+    return this.durationSeconds(session) == null && imputed != null;
   }
 
   private formatDuration(seconds: number | null): string {
@@ -586,7 +626,9 @@ export class SurveyAnalyticsService {
     const abandoned = started - completedCount;
     const completionRate = started ? (completedCount / started) * 100 : null;
 
-    const durations = sessions.filter((s) => s.completed).map((s) => this.durationSeconds(s)).filter((d): d is number => d != null);
+    const completedSessions = sessions.filter((s) => s.completed);
+    const imputed = this.imputedDuration(completedSessions);
+    const durations = completedSessions.map((s) => this.effectiveDuration(s, imputed)).filter((d): d is number => d != null);
     const avgDuration = this.avg(durations);
     const medianDuration = this.median(durations);
     const fastest = durations.length ? Math.min(...durations) : null;
@@ -632,7 +674,7 @@ export class SurveyAnalyticsService {
       summary: {
         totalResponses: responses.length,
         completionRate,
-        avgCompletionTime: this.formatDuration(avgDuration),
+        avgCompletionTime: this.formatDuration(medianDuration), // median — one abandoned-tab outlier must not define the headline
         qualityHighPct: responses.length ? (qualityBuckets.HIGH / responses.length) * 100 : null,
       },
       trend,
@@ -662,6 +704,7 @@ export class SurveyAnalyticsService {
       survey.responses.filter((r) => r.session?.completed).map((r) => this.durationSeconds(r.session)).filter((d): d is number => d != null)
     );
     const qualityMap = this.computeQuality(survey.questions, survey.responses, medianDuration);
+    const imputed = this.imputedDuration(survey.responses.map((r) => r.session));
 
     let filtered = survey.responses.map((r) => ({ ...r, quality: qualityMap.get(r.id)! }));
     if (opts.quality && opts.quality !== 'ALL') filtered = filtered.filter((r) => r.quality.label === opts.quality);
@@ -690,7 +733,8 @@ export class SurveyAnalyticsService {
       startedAt: r.session?.startedAt ?? null,
       respondentEmail: r.respondentEmail,
       respondentEmailVerified: (r as any).respondentEmailVerified ?? false,
-      duration: r.session ? this.durationSeconds(r.session) : null,
+      duration: r.session ? this.effectiveDuration(r.session, imputed) : null,
+      durationEstimated: this.isEstimatedDuration(r.session, imputed),
       quality: r.quality,
       answers: r.answers.map((a: any) => ({ questionId: a.questionId, value: a.value })),
     }));
@@ -800,7 +844,8 @@ export class SurveyAnalyticsService {
     // Email columns only exist when the survey actually collects emails, so
     // anonymous-survey exports stay exactly as before.
     const emailCols = survey.collectEmail ? ['Respondent Email', 'Email Verified'] : [];
-    const headers = ['Response ID', 'Survey Version', 'Submitted At', 'Duration (s)', 'Quality', ...emailCols, ...survey.questions.map((q) => `${q.questionText} [${q.type}]`)];
+    const headers = ['Response ID', 'Survey Version', 'Submitted At', 'Duration (s)', 'Duration Estimated', 'Quality', ...emailCols, ...survey.questions.map((q) => `${q.questionText} [${q.type}]`)];
+    const imputed = this.imputedDuration(survey.responses.map((r) => r.session));
     const escape = (v: any) => {
       let s = v == null ? '' : String(v);
       // Formula-injection guard: respondent text starting with =, +, -, @ or a
@@ -810,7 +855,8 @@ export class SurveyAnalyticsService {
     };
 
     const rows = survey.responses.map((r) => {
-      const duration = r.session ? this.durationSeconds(r.session) : null;
+      const duration = r.session ? this.effectiveDuration(r.session, imputed) : null;
+      const durationEstimated = this.isEstimatedDuration(r.session, imputed);
       const quality = qualityMap.get(r.id)?.label || '';
       const answerCells = survey.questions.map((q) => {
         const a = r.answers.find((x: any) => x.questionId === q.id);
@@ -823,7 +869,7 @@ export class SurveyAnalyticsService {
       const emailCells = survey.collectEmail
         ? [r.respondentEmail || '', (r as any).respondentEmailVerified ? 'Yes (Google)' : r.respondentEmail ? 'No (typed)' : '']
         : [];
-      return [r.id, survey.versionNumber, new Date(r.submittedAt).toISOString(), duration != null ? Math.round(duration) : '', quality, ...emailCells, ...answerCells];
+      return [r.id, survey.versionNumber, new Date(r.submittedAt).toISOString(), duration != null ? Math.round(duration) : '', durationEstimated ? 'Yes' : 'No', quality, ...emailCells, ...answerCells];
     });
 
     return [headers, ...rows].map((row) => row.map(escape).join(',')).join('\n');

@@ -648,7 +648,7 @@ export default function IdeaDashboardPage() {
           </div>
           <div>
             <p className="text-2xl font-bold text-slate-900 tabular-nums">{surveyAnalytics.summary.avgCompletionTime}</p>
-            <p className="text-xs text-slate-500">Avg. Time</p>
+            <p className="text-xs text-slate-500">Typical Time</p>
           </div>
         </div>
       )}

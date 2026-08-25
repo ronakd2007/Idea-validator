@@ -422,6 +422,11 @@ model SurveySession {
   startedAt         DateTime  @default(now())
   lastActivityAt    DateTime  @default(now())
   lastQuestionIndex Int       @default(0) // highest question index reached — the basis for Phase 3 drop-off analysis
+  // Seconds the respondent actually had the tab visible, accumulated from 15s
+  // client heartbeats (gaps beyond the server-side cap are dropped as idle).
+  // The honest completion time — submittedAt-startedAt is wall-clock and can
+  // include hours of abandoned-tab idle.
+  activeSeconds     Int       @default(0)
   // True once the respondent has actually answered something. Distinguishes a
   // real (partial) attempt from a bare page-open — only engaged or completed
   // sessions count in drop-off analytics. lastQuestionIndex can't carry this:

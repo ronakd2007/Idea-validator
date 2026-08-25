@@ -177,6 +177,8 @@ export const api = {
   startPublicSurveySession: (publicId: string) => request(`/public/surveys/${publicId}/sessions`, { method: 'POST' }),
   updatePublicSurveyProgress: (publicId: string, sessionToken: string, questionIndex: number) =>
     request(`/public/surveys/${publicId}/sessions/progress`, { method: 'PATCH', body: JSON.stringify({ sessionToken, questionIndex }) }),
+  heartbeatPublicSurveySession: (publicId: string, sessionToken: string) =>
+    request(`/public/surveys/${publicId}/sessions/heartbeat`, { method: 'PATCH', body: JSON.stringify({ sessionToken }) }),
   submitPublicSurveyResponse: (publicId: string, body: any) =>
     request(`/public/surveys/${publicId}/responses`, { method: 'POST', body: JSON.stringify(body) }),
   submitIncentiveEntry: (publicId: string, name: string, contact: string) =>

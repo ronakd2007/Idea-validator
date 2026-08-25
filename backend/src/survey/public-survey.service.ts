@@ -4,6 +4,12 @@ import { OAuth2Client } from 'google-auth-library';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
 
+// Heartbeats arrive every ~15s while the survey tab is visible. A gap a bit
+// larger than that is network jitter or a missed beat; anything beyond the cap
+// means the tab was hidden or closed — idle time that must NOT count toward
+// completion time, so the whole gap is dropped rather than clamped.
+const ACTIVE_GAP_CAP_SECONDS = 45;
+
 @Injectable()
 export class PublicSurveyService {
   private googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -149,6 +155,32 @@ export class PublicSurveyService {
     return { sessionToken: session.token };
   }
 
+  // Seconds to add to activeSeconds for a signal arriving `now`: the whole gap
+  // when it is within heartbeat cadence, nothing when the respondent was away.
+  private countedActiveGap(lastActivityAt: Date, now: Date): number {
+    const gap = (now.getTime() - new Date(lastActivityAt).getTime()) / 1000;
+    if (gap <= 0) return 0;
+    return gap <= ACTIVE_GAP_CAP_SECONDS ? Math.round(gap) : 0;
+  }
+
+  // Visible-tab heartbeat — fire-and-forget like updateProgress, never blocks
+  // or errors the respondent's experience. Each beat counts the gap since the
+  // last signal toward activeSeconds; an over-cap gap (tab was hidden/closed)
+  // counts nothing and merely re-anchors lastActivityAt.
+  async heartbeat(publicId: string, sessionToken: string) {
+    if (!sessionToken) return { success: false };
+    const survey = await this.prisma.survey.findUnique({ where: { publicId }, select: { id: true } });
+    if (!survey) return { success: false };
+    const session = await this.prisma.surveySession.findUnique({ where: { token: sessionToken } });
+    if (!session || session.surveyId !== survey.id || session.completed) return { success: false };
+    const now = new Date();
+    await this.prisma.surveySession.update({
+      where: { id: session.id },
+      data: { activeSeconds: { increment: this.countedActiveGap(session.lastActivityAt, now) }, lastActivityAt: now },
+    });
+    return { success: true };
+  }
+
   // Best-effort progress signal for Phase 3 drop-off analysis — fire-and-forget
   // from the client, never blocks or errors the respondent's experience.
   async updateProgress(publicId: string, sessionToken: string, questionIndex: number) {
@@ -173,12 +205,16 @@ export class PublicSurveyService {
       this.logRespondent('SURVEY_STARTED', survey);
     }
 
+    // Must accumulate active time, not just touch lastActivityAt — re-anchoring
+    // without counting would silently discard the gap since the last heartbeat.
+    const now = new Date();
     await this.prisma.surveySession.update({
       where: { id: session.id },
       data: {
         engaged: true,
         ...(advanced ? { lastQuestionIndex: questionIndex } : {}),
-        lastActivityAt: new Date(),
+        activeSeconds: { increment: this.countedActiveGap(session.lastActivityAt, now) },
+        lastActivityAt: now,
       },
     });
     return { success: true };
@@ -310,9 +346,18 @@ export class PublicSurveyService {
           .map((a) => ({ responseId: response.id, questionId: a.questionId, value: JSON.stringify(a.value) }));
         if (rows.length) await tx.surveyAnswer.createMany({ data: rows });
 
+        const now = new Date();
         await tx.surveySession.update({
           where: { id: session.id },
-          data: { completed: true, engaged: true, submittedAt: new Date(), lastActivityAt: new Date() },
+          data: {
+            completed: true,
+            engaged: true,
+            submittedAt: now,
+            // The stretch between the last heartbeat and pressing Submit is
+            // active time too — without this, sub-15s responses would record 0.
+            activeSeconds: { increment: this.countedActiveGap(session.lastActivityAt, now) },
+            lastActivityAt: now,
+          },
         });
       },
       // Prisma's 5s default would discard a completed submission on a slow

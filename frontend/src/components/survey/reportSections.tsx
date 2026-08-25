@@ -97,7 +97,7 @@ export function SummaryCards({ summary, sampleSizeLabel }: { summary: any; sampl
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
       <SummaryCard label="Total Responses" value={String(summary.totalResponses)} sub={sampleSizeLabel} note={meaning.confidence.note} noteTone={meaning.confidence.tone} />
       <SummaryCard label="Completion Rate" value={summary.completionRate != null ? `${summary.completionRate.toFixed(0)}%` : 'N/A'} note={meaning.completion?.note} noteTone={meaning.completion?.tone} />
-      <SummaryCard label="Avg. Completion Time" value={summary.avgCompletionTime} note="Typical time from opening the survey to submitting it." />
+      <SummaryCard label="Typical Completion Time" value={summary.avgCompletionTime} note="Median active time spent filling in the survey. Responses recorded before active-time tracking may include idle time." />
       <SummaryCard label="Response Quality" value={summary.qualityHighPct != null ? `${summary.qualityHighPct.toFixed(0)}%` : 'N/A'} sub="High quality" note={meaning.quality?.note} noteTone={meaning.quality?.tone} />
     </div>
   );

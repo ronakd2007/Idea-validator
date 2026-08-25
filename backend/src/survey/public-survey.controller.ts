@@ -24,6 +24,13 @@ export class PublicSurveyController {
     return this.publicSurveyService.updateProgress(publicId, body.sessionToken, body.questionIndex);
   }
 
+  // ~15s visible-tab heartbeat feeding SurveySession.activeSeconds — the basis
+  // of honest completion-time analytics (wall-clock includes abandoned-tab idle).
+  @Patch(':publicId/sessions/heartbeat')
+  heartbeat(@Param('publicId') publicId: string, @Body() body: { sessionToken: string }) {
+    return this.publicSurveyService.heartbeat(publicId, body.sessionToken);
+  }
+
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post(':publicId/responses')
   submit(

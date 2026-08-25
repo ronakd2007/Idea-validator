@@ -28,6 +28,16 @@ function submittedKey(publicId: string) {
   return `iv_survey_submitted_${publicId}`;
 }
 
+// How long a cached session token stays reusable after the tab was last seen.
+// Long enough to survive an accidental refresh or a short break (keeping the
+// same A/B variant), short enough that coming back much later starts a fresh
+// session instead of resurrecting an abandoned one.
+const SESSION_REUSE_MS = 30 * 60 * 1000;
+// While the tab is visible the form pings the server at this cadence and the
+// server sums the pings into the session's active time. A hidden or closed tab
+// sends nothing, so idle stretches never count toward completion time.
+const HEARTBEAT_MS = 15_000;
+
 export default function PublicSurveyPage() {
   const params = useParams();
   const publicId = params.publicId as string;
@@ -78,13 +88,26 @@ export default function PublicSurveyPage() {
         }
 
         try {
-          const existing = typeof window !== 'undefined' ? localStorage.getItem(sessionKey(publicId)) : null;
-          let token: string = existing || '';
+          // Reuse the cached session only while it is fresh — stored as
+          // {t, ts} where ts is stamped by the heartbeat below. A stale entry
+          // (or a legacy plain-string token, which carries no timestamp) means
+          // the respondent left and came back: start a fresh session with a
+          // fresh clock rather than resurrecting the abandoned one.
+          let token = '';
+          if (typeof window !== 'undefined') {
+            try {
+              const raw = localStorage.getItem(sessionKey(publicId));
+              const parsed = raw && raw.startsWith('{') ? JSON.parse(raw) : null;
+              if (parsed?.t && Date.now() - (parsed.ts || 0) < SESSION_REUSE_MS) token = parsed.t;
+            } catch {
+              // Unreadable storage — treat as no cached session.
+            }
+          }
           if (!token) {
             const session = await api.startPublicSurveySession(publicId);
             if (cancelled) return;
             token = session.sessionToken;
-            localStorage.setItem(sessionKey(publicId), token);
+            localStorage.setItem(sessionKey(publicId), JSON.stringify({ t: token, ts: Date.now() }));
           }
           setSessionToken(token);
 
@@ -122,6 +145,41 @@ export default function PublicSurveyPage() {
     }, 800);
     return () => clearTimeout(t);
   }, [answers, sessionToken, state, survey, publicId]);
+
+  // Active-time heartbeat: fire-and-forget, only while the tab is visible, so
+  // the server can total genuinely active time instead of wall-clock. Each
+  // beat (and the tab being hidden/closed) also stamps localStorage so a
+  // reopened tab knows whether the cached session is fresh enough to resume.
+  useEffect(() => {
+    if (!sessionToken || state !== 'ready') return;
+    const stamp = () => {
+      try {
+        localStorage.setItem(sessionKey(publicId), JSON.stringify({ t: sessionToken, ts: Date.now() }));
+      } catch {
+        // Storage unavailable — the session simply won't resume on reopen.
+      }
+    };
+    const beat = () => {
+      if (document.visibilityState !== 'visible') return;
+      stamp();
+      api.heartbeatPublicSurveySession(publicId, sessionToken).catch(() => {});
+    };
+    beat(); // anchor immediately so the first interval gap is counted
+    const id = setInterval(beat, HEARTBEAT_MS);
+    const onVisibility = () => {
+      // Returning to a visible tab beats immediately: the server sees the long
+      // gap, counts none of it, and re-anchors so counting resumes from now.
+      if (document.visibilityState === 'visible') beat();
+      else stamp();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', stamp);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', stamp);
+    };
+  }, [sessionToken, state, publicId]);
 
   // ---------- answers & submit ----------
 
