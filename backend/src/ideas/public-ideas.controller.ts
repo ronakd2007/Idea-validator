@@ -10,6 +10,13 @@ export class PublicIdeasController {
   constructor(private ideasService: IdeasService) {}
 
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  // Full report — everything the founder sees on their dashboard, minus
+  // owner-only actions and validator contact details.
+  @Get(':publicId/report')
+  getPublicReport(@Param('publicId') publicId: string) {
+    return this.ideasService.getPublicDashboard(publicId);
+  }
+
   @Get(':publicId')
   getPublic(@Param('publicId') publicId: string) {
     return this.ideasService.getPublicIdea(publicId);

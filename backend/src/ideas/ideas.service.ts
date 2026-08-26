@@ -5,21 +5,33 @@ import { ActivityService } from '../activity/activity.service';
 import { SurveyAnalyticsService } from '../survey/survey-analytics.service';
 
 // Which sections a founder exposes on their idea's public validation page.
-// Problem/solution default OFF — the pitch itself is the founder's IP; scores
-// and aggregate evidence are what a public "proof of validation" needs.
+/**
+ * What a shared idea report exposes. Every key is a section the server omits
+ * from the payload when switched off — never merely hidden in CSS.
+ *
+ * All default ON: the point of sharing a report is that the reader sees what
+ * the founder sees. A page of scores with the idea and the reviews stripped
+ * out reads as an unexplained number. Founders who want less still toggle any
+ * section off per idea, and links shared before a default changes keep their
+ * own stored settings — parseShareSettings falls back to these only for keys
+ * that were never persisted.
+ */
 export const SHARE_DEFAULTS = {
-  // Default to showing what the idea IS. A shared report whose problem and
-  // solution are blank reads as an unexplained score. Founders who want them
-  // hidden still toggle them off per idea, and shares enabled before this
-  // change keep their own stored settings — parseShareSettings only falls back
-  // to these defaults for keys that were never persisted.
   showProblem: true,
   showSolution: true,
   showScores: true,
   showStrengthsRisks: true,
   showAiInsight: true,
   showCounts: true,
+  showSurveys: true,
+  showInsights: true,
+  showExpertComments: true,
 };
+
+// Sections added to the shared report after links were already in circulation.
+// See parseShareSettings — these stay off for a share configured before they
+// existed, so nothing a founder previously shared silently gains new content.
+const SECTIONS_REQUIRING_OPT_IN = ['showSurveys', 'showInsights', 'showExpertComments'];
 
 // Labels for the public strengths/risks bullets — mirrors the dashboard's
 // MATRIX_CATEGORIES so both surfaces describe categories with the same words.
@@ -494,12 +506,29 @@ export class IdeasService {
     return idea;
   }
 
+  /**
+   * Merge stored share settings over the defaults, with one safeguard.
+   *
+   * Sections listed in SECTIONS_REQUIRING_OPT_IN did not exist when older
+   * links were configured, so their owners never consented to publishing them.
+   * Defaulting them ON would retroactively expose things like every reviewer's
+   * written criticism on links shared long ago. For a share that was already
+   * configured, they stay OFF until its owner turns them on; a brand-new share
+   * gets the defaults, which are ON.
+   */
   private parseShareSettings(raw: string | null | undefined) {
+    let stored: Record<string, any> = {};
     try {
-      return { ...SHARE_DEFAULTS, ...(JSON.parse(raw || '{}') || {}) };
+      stored = JSON.parse(raw || '{}') || {};
     } catch {
-      return { ...SHARE_DEFAULTS };
+      stored = {};
     }
+    const alreadyConfigured = Object.keys(stored).length > 0;
+    const base: Record<string, any> = { ...SHARE_DEFAULTS };
+    if (alreadyConfigured) {
+      for (const key of SECTIONS_REQUIRING_OPT_IN) base[key] = false;
+    }
+    return { ...base, ...stored } as typeof SHARE_DEFAULTS;
   }
 
   // Only the keys in SHARE_DEFAULTS survive, and only as booleans — a crafted
@@ -802,6 +831,111 @@ export class IdeasService {
       risks: settings.showStrengthsRisks ? risks : null,
       aiInsight: settings.showAiInsight ? this.extractAiInsight(idea.aiSummary) : null,
       recommendation,
+    };
+  }
+
+  /**
+   * Full public report — the founder's own dashboard content, for anyone
+   * holding the share link. Distinct from getPublicIdea (a compact summary
+   * card); this backs the "share everything I see" report.
+   *
+   * Two rules make it safe to serve unauthenticated:
+   *  - Validator identity is limited to what makes a review credible (name,
+   *    occupation, experience). Contact details are never selected, so they
+   *    cannot leak through a spread or a forgotten field.
+   *  - Every block is gated by the founder's own share settings, and a block
+   *    switched off is omitted from the payload rather than hidden client-side.
+   */
+  async getPublicDashboard(publicId: string) {
+    const idea = await this.prisma.idea.findUnique({
+      where: { publicId },
+      include: {
+        selfAssessment: true,
+        validations: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            validator: {
+              select: {
+                name: true,
+                validatorProfile: {
+                  select: { occupation: true, yearsOfExperience: true, areasOfExpertise: true },
+                },
+              },
+            },
+            marketOpportunity: true, feasibility: true, founderFit: true, revenuePotential: true,
+            scalability: true, riskAssessment: true, investorAttractiveness: true, innovation: true,
+            socialImpact: true, customerValidation: true, sharkTank: true, startupSuccess: true, openFeedback: true,
+          },
+        },
+        surveys: { select: { id: true, title: true, status: true, _count: { select: { responses: true } } } },
+      },
+    });
+    if (!idea || !idea.publicShareEnabled) throw new NotFoundException('This validation page is not available');
+
+    const settings = this.parseShareSettings(idea.publicShareSettings);
+    const raw: any = this.aggregateScores(idea.validations);
+
+    // aggregateScores is written for the OWNER's dashboard, where reviewer
+    // contact details are the point. Strip them explicitly rather than relying
+    // on the narrowed `validator` select above to leave them undefined — that
+    // would turn any future widening of the select into a silent leak.
+    const { interestedContacts: _drop, ...rest } = raw;
+    const aggregated = {
+      ...rest,
+      openFeedbacks: (raw.openFeedbacks || []).map((fb: any) => ({
+        validatorName: fb.validatorName,
+        validatorOccupation: fb.validatorOccupation,
+        strength: fb.strength,
+        weakness: fb.weakness,
+        improvement: fb.improvement,
+      })),
+      // Never exposed publicly: these are reviewers' personal contact details,
+      // shared with the founder alone.
+      interestedContacts: [],
+    };
+
+    // Customer evidence mirrors the founder's dashboard: the linked survey
+    // with the most responses. Analytics are best-effort — a survey that fails
+    // to aggregate must not take the whole shared report down with it.
+    let surveyAnalytics: any = null;
+    const primary = [...idea.surveys].sort((a, b) => b._count.responses - a._count.responses)[0];
+    if (settings.showSurveys && primary && primary._count.responses > 0) {
+      try {
+        surveyAnalytics = await this.surveyAnalytics.getAnalytics(primary.id, null, {});
+      } catch {
+        surveyAnalytics = null;
+      }
+    }
+
+    return {
+      settings,
+      idea: {
+        id: idea.id,
+        title: idea.title,
+        industryCategory: idea.industryCategory,
+        stage: idea.stage,
+        version: idea.version,
+        submittedAt: idea.submittedAt,
+        problemStatement: settings.showProblem ? idea.problemStatement : null,
+        solutionDescription: settings.showSolution ? idea.solutionDescription : null,
+        targetCustomer: settings.showProblem ? idea.targetCustomer : null,
+        revenueModel: settings.showProblem ? idea.revenueModel : null,
+        assumptions: settings.showInsights ? idea.assumptions : '[]',
+        aiSummary: settings.showAiInsight ? idea.aiSummary : null,
+        selfAssessment: settings.showScores ? idea.selfAssessment : null,
+      },
+      aggregated: settings.showScores ? aggregated : null,
+      // Percentile strip in the header — aggregate cohort stats, nothing
+      // identifying about any other founder's idea.
+      benchmark: settings.showScores
+        ? await this.computeBenchmark(idea.id, idea.industryCategory, this.leanOverallScore(idea.validations))
+        : null,
+      // Reviews carry the scores each expert gave plus their written feedback —
+      // this is the "Expert Comments" section of the founder's dashboard.
+      validations: settings.showExpertComments ? idea.validations : [],
+      totalValidations: idea.validations.length,
+      surveys: settings.showSurveys ? idea.surveys : [],
+      surveyAnalytics,
     };
   }
 

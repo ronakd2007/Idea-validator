@@ -104,6 +104,8 @@ export const api = {
     request(`/ideas/${id}/share`, { method: 'PATCH', body: JSON.stringify({ settings }) }),
   disableIdeaShare: (id: string) => request(`/ideas/${id}/share`, { method: 'DELETE' }),
   getPublicIdea: (publicId: string) => request(`/public/ideas/${publicId}`),
+  // Full shared report — the founder's dashboard content for link holders.
+  getPublicIdeaReport: (publicId: string) => request(`/public/ideas/${publicId}/report`),
   getIdeaVersions: (id: string) => request(`/ideas/${id}/versions`),
 
   // AI

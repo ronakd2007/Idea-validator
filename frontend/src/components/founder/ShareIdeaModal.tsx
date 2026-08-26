@@ -10,6 +10,9 @@ const SECTION_TOGGLES: { key: string; label: string; hint: string }[] = [
   { key: 'showAiInsight', label: 'AI insight', hint: 'The verdict sentence from your AI summary' },
   { key: 'showProblem', label: 'Problem statement', hint: 'Your full problem description' },
   { key: 'showSolution', label: 'Solution description', hint: 'Your full solution' },
+  { key: 'showSurveys', label: 'Customer surveys', hint: 'Survey results and response analytics' },
+  { key: 'showInsights', label: "What's missing", hint: 'Validation gaps and your assumption checks' },
+  { key: 'showExpertComments', label: 'Expert comments', hint: 'Each reviewer\u2019s written feedback and scores' },
 ];
 
 // Must stay in step with SHARE_DEFAULTS in the backend's ideas.service.ts —
@@ -22,6 +25,9 @@ const SHARE_DEFAULTS: Record<string, boolean> = {
   showAiInsight: true,
   showProblem: true,
   showSolution: true,
+  showSurveys: true,
+  showInsights: true,
+  showExpertComments: true,
 };
 
 /**

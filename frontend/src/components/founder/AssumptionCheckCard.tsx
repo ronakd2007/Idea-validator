@@ -16,13 +16,16 @@ const STATUS_META = {
 const CATEGORIES = Object.entries(ASSUMPTION_CATEGORY_LABELS);
 
 interface Props {
-  ideaId: string;
+  // Both optional so the card can render on the public shared report, where
+  // there is no owner to save on behalf of. Editing is unreachable without
+  // readOnly=false, and every write path below is behind that guard.
+  ideaId?: string;
   assumptions: Assumption[];
   aggregated: any;
   surveyAnalytics: any;
   gapKey?: string | null;
   readOnly?: boolean;
-  onSaved: (next: Assumption[]) => void;
+  onSaved?: (next: Assumption[]) => void;
 }
 
 /**
