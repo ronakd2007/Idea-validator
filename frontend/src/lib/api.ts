@@ -118,6 +118,12 @@ export const api = {
   suggestAssumptions: (input: { ideaId?: string; draft?: any }) =>
     request('/ai/suggest-assumptions', { method: 'POST', body: JSON.stringify(input) }),
 
+  // AI Deep Dive — autonomous research runs. Runs usually start themselves when
+  // the idea is paid for; this is the manual start for older ideas and retries.
+  runAiDeepDive: (ideaId: string) => request(`/ai/agent/run/${ideaId}`, { method: 'POST' }),
+  getLatestAiDeepDive: (ideaId: string) => request(`/ai/agent/latest/${ideaId}`),
+  listAiDeepDiveRuns: (ideaId: string) => request(`/ai/agent/runs/${ideaId}`),
+
   // Mass Survey
   createSurvey: (body: { ideaId?: string; title: string; description?: string }) =>
     request('/surveys', { method: 'POST', body: JSON.stringify(body) }),

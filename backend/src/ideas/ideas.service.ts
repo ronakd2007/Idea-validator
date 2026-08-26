@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
 import { SurveyAnalyticsService } from '../survey/survey-analytics.service';
+import { DIMENSIONS, DimensionKey, OVERALL_DIMENSIONS, overallFromDimensions, sum5 } from './score.util';
 
 // Which sections a founder exposes on their idea's public validation page.
 /**
@@ -240,24 +241,21 @@ export class IdeasService {
   private aggregateScores(validations: any[]) {
     if (!validations.length) return { totalValidations: 0 };
 
-    const sum5 = (obj: any, keys: string[]) => keys.reduce((s, k) => s + (obj[k] || 0), 0);
+    // The rubric itself lives in score.util so the AI Deep Dive scores the same
+    // dimensions the same way — see DIMENSIONS/overallFromDimensions there.
+    const dimensionScores = (key: DimensionKey) => {
+      const dim = DIMENSIONS.find(d => d.key === key)!;
+      return validations.filter(v => v[key]).map(v => sum5(v[key], dim.fields));
+    };
 
-    const marketScores = validations.filter(v => v.marketOpportunity).map(v =>
-      sum5(v.marketOpportunity, ['problemSeverity', 'marketSize', 'willingnessToPay', 'marketGrowthRate', 'competitionGap']));
-    const feasScores = validations.filter(v => v.feasibility).map(v =>
-      sum5(v.feasibility, ['technicalComplexity', 'capitalRequirement', 'regulatoryDifficulty', 'talentAvailability', 'timeToLaunch']));
-    const founderScores = validations.filter(v => v.founderFit).map(v =>
-      sum5(v.founderFit, ['industryKnowledge', 'relevantExperience', 'networkAccess', 'passion', 'skillAlignment']));
-    const revenueScores = validations.filter(v => v.revenuePotential).map(v =>
-      sum5(v.revenuePotential, ['pricingPower', 'recurringRevenuePotential', 'profitMarginPotential', 'upsellOpportunities', 'customerLifetimeValue']));
-    const scaleScores = validations.filter(v => v.scalability).map(v =>
-      sum5(v.scalability, ['geographicExpansion', 'automationPotential', 'operationalComplexity', 'dependenceOnFounder', 'networkEffects']));
-    const innovScores = validations.filter(v => v.innovation).map(v =>
-      sum5(v.innovation, ['uniqueness', 'patentability', 'competitiveAdvantage', 'disruptionPotential', 'defensibility']));
-    const socialScores = validations.filter(v => v.socialImpact).map(v =>
-      sum5(v.socialImpact, ['jobCreation', 'environmentalBenefit', 'communityBenefit', 'inclusion', 'sustainability']));
-    const investorScores = validations.filter(v => v.investorAttractiveness).map(v =>
-      sum5(v.investorAttractiveness, ['marketSize', 'growthPotential', 'scalability', 'exitPotential', 'defensibility']));
+    const marketScores = dimensionScores('marketOpportunity');
+    const feasScores = dimensionScores('feasibility');
+    const founderScores = dimensionScores('founderFit');
+    const revenueScores = dimensionScores('revenuePotential');
+    const scaleScores = dimensionScores('scalability');
+    const innovScores = dimensionScores('innovation');
+    const socialScores = dimensionScores('socialImpact');
+    const investorScores = dimensionScores('investorAttractiveness');
 
     const sharkScores = validations.filter(v => v.sharkTank).map(v =>
       (v.sharkTank.problemImportance / 10) * 25 + (v.sharkTank.marketSize / 10) * 20 +
@@ -317,19 +315,17 @@ export class IdeasService {
         occupation: v.validator.validatorProfile?.occupation,
       }));
 
-    const normalizedScores = [
-      marketScores.length ? (this.avg(marketScores) / 50) * 100 : null,
-      feasScores.length ? (this.avg(feasScores) / 50) * 100 : null,
-      founderScores.length ? (this.avg(founderScores) / 50) * 100 : null,
-      revenueScores.length ? (this.avg(revenueScores) / 50) * 100 : null,
-      scaleScores.length ? (this.avg(scaleScores) / 50) * 100 : null,
-      innovScores.length ? (this.avg(innovScores) / 50) * 100 : null,
-      socialScores.length ? (this.avg(socialScores) / 50) * 100 : null,
-    ].filter(s => s !== null) as number[];
-
     return {
       totalValidations: validations.length,
-      overallScore: this.avg(normalizedScores),
+      overallScore: overallFromDimensions({
+        marketOpportunity: marketScores.length ? this.avg(marketScores) : null,
+        feasibility: feasScores.length ? this.avg(feasScores) : null,
+        founderFit: founderScores.length ? this.avg(founderScores) : null,
+        revenuePotential: revenueScores.length ? this.avg(revenueScores) : null,
+        scalability: scaleScores.length ? this.avg(scaleScores) : null,
+        innovation: innovScores.length ? this.avg(innovScores) : null,
+        socialImpact: socialScores.length ? this.avg(socialScores) : null,
+      }),
       marketOpportunityAvg: this.avg(marketScores),
       feasibilityAvg: this.avg(feasScores),
       founderFitAvg: this.avg(founderScores),
@@ -675,21 +671,15 @@ export class IdeasService {
    */
   private leanOverallScore(validations: any[]): number | null {
     if (!validations.length) return null;
-    const sum5 = (obj: any, keys: string[]) => keys.reduce((s, k) => s + (obj[k] || 0), 0);
-    const per = (rel: string, keys: string[]) => {
-      const arr = validations.filter((v) => v[rel]).map((v) => sum5(v[rel], keys));
-      return arr.length ? (this.avg(arr) / 50) * 100 : null;
-    };
-    const parts = [
-      per('marketOpportunity', ['problemSeverity', 'marketSize', 'willingnessToPay', 'marketGrowthRate', 'competitionGap']),
-      per('feasibility', ['technicalComplexity', 'capitalRequirement', 'regulatoryDifficulty', 'talentAvailability', 'timeToLaunch']),
-      per('founderFit', ['industryKnowledge', 'relevantExperience', 'networkAccess', 'passion', 'skillAlignment']),
-      per('revenuePotential', ['pricingPower', 'recurringRevenuePotential', 'profitMarginPotential', 'upsellOpportunities', 'customerLifetimeValue']),
-      per('scalability', ['geographicExpansion', 'automationPotential', 'operationalComplexity', 'dependenceOnFounder', 'networkEffects']),
-      per('innovation', ['uniqueness', 'patentability', 'competitiveAdvantage', 'disruptionPotential', 'defensibility']),
-      per('socialImpact', ['jobCreation', 'environmentalBenefit', 'communityBenefit', 'inclusion', 'sustainability']),
-    ].filter((x): x is number => x != null);
-    return parts.length ? this.avg(parts) : null;
+    const scores: Partial<Record<DimensionKey, number | null>> = {};
+    let scored = 0;
+    for (const key of OVERALL_DIMENSIONS) {
+      const dim = DIMENSIONS.find(d => d.key === key)!;
+      const arr = validations.filter(v => v[key]).map(v => sum5(v[key], dim.fields));
+      scores[key] = arr.length ? this.avg(arr) : null;
+      if (arr.length) scored++;
+    }
+    return scored ? overallFromDimensions(scores) : null;
   }
 
   /**

@@ -19,6 +19,7 @@ import { detectValidationGap } from '@/lib/validationGap';
 import AssumptionCheckCard from '@/components/founder/AssumptionCheckCard';
 import type { Assumption } from '@/lib/assumptionCheck';
 import ScoreBreakdown from '@/components/founder/ScoreBreakdown';
+import AiValidationPanel from '@/components/founder/AiValidationPanel';
 import ShareIdeaModal from '@/components/founder/ShareIdeaModal';
 import VersionTimeline, { IdeaVersion } from '@/components/founder/VersionTimeline';
 import StatusBadge, { type BadgeTone } from '@/components/ui/StatusBadge';
@@ -39,6 +40,7 @@ const REPORT_TONE_TO_BADGE: Record<string, BadgeTone> = {
 const TABS = [
   { id: 'overview', label: 'Summary' },
   { id: 'scores', label: 'The Scores' },
+  { id: 'ai', label: 'AI Deep Dive' },
   { id: 'surveys', label: 'Customer Surveys' },
   { id: 'insights', label: "What's Missing" },
   { id: 'experts', label: 'Expert Comments' },
@@ -83,6 +85,7 @@ export default function IdeaDashboardView({ ideaId, publicId }: { ideaId?: strin
   const [shareSettings, setShareSettings] = useState<any>(null);
   const can = (key: string) => !isPublic || shareSettings?.[key] !== false;
   const visibleTab = (id: string) => {
+    if (id === 'ai') return !isPublic;
     const key = TAB_SETTING[id];
     return !key || can(key);
   };
@@ -120,7 +123,9 @@ export default function IdeaDashboardView({ ideaId, publicId }: { ideaId?: strin
           const st = d.settings || {};
           setShareSettings(st);
           // A deep link (#experts) can name a tab this viewer cannot see.
+          // #ai never resolves publicly: AI Deep Dive is owner-only.
           setTab((current) => {
+            if (current === 'ai') return 'overview';
             const key = TAB_SETTING[current];
             return key && st[key] === false ? 'overview' : current;
           });
@@ -1195,6 +1200,16 @@ export default function IdeaDashboardView({ ideaId, publicId }: { ideaId?: strin
             )}
           </>
         )
+      )}
+
+      {tab === 'ai' && !isPublic && idea && (
+        <AiValidationPanel
+          ideaId={idea.id}
+          viewMode={viewMode}
+          // Research only starts once the submission is paid for, so the panel
+          // explains the wait rather than offering a button that would 400.
+          eligible={idea.paymentStatus === 'COMPLETED'}
+        />
       )}
 
       {!isPublic && shareOpen && share && idea && (

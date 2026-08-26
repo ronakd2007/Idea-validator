@@ -1,13 +1,20 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
+import { AgentService } from '../ai/agent.service';
 
 @Injectable()
 export class PaymentService {
   private fee: number;
+  private readonly logger = new Logger(PaymentService.name);
 
-  constructor(private config: ConfigService, private prisma: PrismaService, private activity: ActivityService) {
+  constructor(
+    private config: ConfigService,
+    private prisma: PrismaService,
+    private activity: ActivityService,
+    private agent: AgentService,
+  ) {
     this.fee = Number(config.get('IDEA_SUBMISSION_FEE', 2999));
   }
 
@@ -66,6 +73,15 @@ export class PaymentService {
     });
 
     await this.logIdeaSubmitted(ideaId);
+
+    // Payment completing is also when AI Deep Dive research becomes worth
+    // paying for in search credits and model calls, so it starts here rather
+    // than at idea creation — an abandoned draft never spends anything. This
+    // covers revisions too: they reach COMPLETED through this same method.
+    // Fire-and-forget by design; research failing must never fail a payment.
+    void this.agent
+      .startRun(ideaId, founderId, 'auto')
+      .catch(err => this.logger.error(`Could not start AI Deep Dive for idea ${ideaId}: ${err?.message}`));
 
     return { success: true, amount, message: 'Payment completed (test mode)' };
   }

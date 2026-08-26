@@ -96,6 +96,7 @@ model Idea {
   payments       Payment[]
   surveys        Survey[]
   aiConversations AiConversation[]
+  aiValidationRuns AiValidationRun[]
   startup        Startup?
 
   // Postgres does not index FK columns automatically — without this,
@@ -574,6 +575,31 @@ model AiMessage {
   createdAt      DateTime       @default(now())
 
   @@index([conversationId])
+}
+
+// AI Deep Dive — one row per autonomous research run over an idea.
+//
+// The row IS the run's state: the pipeline runs in-process (fire-and-forget,
+// no queue), so a server restart mid-run leaves a stale RUNNING row that is
+// reconciled to FAILED on the next start/poll by comparing updatedAt. Steps
+// are therefore written as they progress, which doubles as the heartbeat.
+model AiValidationRun {
+  id            String    @id @default(cuid())
+  ideaId        String
+  idea          Idea      @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  status        String    @default("QUEUED") // QUEUED | RUNNING | COMPLETED | FAILED
+  steps         String    @default("[]") // JSON array of { key, label, status, detail }
+  report        String? // JSON report, whitelisted + clamped before write. Set on COMPLETED
+  error         String? // human-readable failure reason. Set on FAILED
+  // Server-computed research provenance — never taken from the model.
+  webSearchUsed Boolean   @default(false)
+  searchCount   Int       @default(0)
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([ideaId])
 }
 
 // Public Startup Directory.

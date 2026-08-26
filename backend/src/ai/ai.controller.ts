@@ -1,13 +1,15 @@
 import { Controller, Get, Post, Param, Query, Body, Request, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { AiService } from './ai.service';
+import { AgentService } from './agent.service';
 
 @Controller('ai')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AiController {
-  constructor(private readonly aiService: AiService) {}
+  constructor(private readonly aiService: AiService, private readonly agentService: AgentService) {}
 
   @Get('summary/:ideaId')
   @Roles('FOUNDER')
@@ -38,5 +40,31 @@ export class AiController {
   @Roles('FOUNDER')
   async suggestAssumptions(@Request() req: any, @Body() body: { ideaId?: string; draft?: any }) {
     return this.aiService.suggestAssumptions(req.user.userId, { ideaId: body?.ideaId, draft: body?.draft });
+  }
+
+  // ---------- AI Deep Dive ----------
+  //
+  // Runs normally start themselves when an idea is paid for. This is the manual
+  // entry point: ideas that predate the feature, and retrying a failed run.
+  // A run costs real search credits and model calls, hence the tight throttle.
+  @Post('agent/run/:ideaId')
+  @Roles('FOUNDER')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  async runAgent(@Param('ideaId') ideaId: string, @Request() req: any) {
+    return this.agentService.startRun(ideaId, req.user.userId, 'manual');
+  }
+
+  @Get('agent/latest/:ideaId')
+  @Roles('FOUNDER')
+  async getAgentLatest(@Param('ideaId') ideaId: string, @Request() req: any) {
+    // View-as-User must not write: reconciling an interrupted run is a founder
+    // action, not something an admin's page view should trigger.
+    return this.agentService.getLatest(ideaId, req.user.userId, { readOnly: !!req.user.viewAs });
+  }
+
+  @Get('agent/runs/:ideaId')
+  @Roles('FOUNDER')
+  async listAgentRuns(@Param('ideaId') ideaId: string, @Request() req: any) {
+    return this.agentService.listRuns(ideaId, req.user.userId);
   }
 }
