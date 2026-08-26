@@ -15,8 +15,13 @@ export class PublicSurveyReportController {
 
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @Get(':shareId')
-  getReport(@Param('shareId') shareId: string, @Query('range') range?: string) {
-    return this.analytics.getPublicReport(shareId, { range });
+  getReport(
+    @Param('shareId') shareId: string,
+    @Query('range') range?: string,
+    @Query('outcomeQuestionId') outcomeQuestionId?: string,
+    @Query('segmentQuestionId') segmentQuestionId?: string,
+  ) {
+    return this.analytics.getPublicReport(shareId, { range, outcomeQuestionId, segmentQuestionId });
   }
 
   @Throttle({ default: { limit: 60, ttl: 60_000 } })

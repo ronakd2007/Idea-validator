@@ -185,8 +185,14 @@ export const api = {
     request(`/public/surveys/${publicId}/incentive-entry`, { method: 'POST', body: JSON.stringify({ name, contact }) }),
 
   // Public survey results (unauthenticated — anyone with the share link)
-  getPublicSurveyReport: (shareId: string, opts: { range?: string } = {}) =>
-    request(`/public/survey-reports/${shareId}${opts.range ? `?range=${encodeURIComponent(opts.range)}` : ''}`),
+  getPublicSurveyReport: (shareId: string, opts: { range?: string; outcomeQuestionId?: string; segmentQuestionId?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (opts.range) qs.set('range', opts.range);
+    if (opts.outcomeQuestionId) qs.set('outcomeQuestionId', opts.outcomeQuestionId);
+    if (opts.segmentQuestionId) qs.set('segmentQuestionId', opts.segmentQuestionId);
+    const s = qs.toString();
+    return request(`/public/survey-reports/${shareId}${s ? `?${s}` : ''}`);
+  },
   getPublicSurveyReportQuestions: (shareId: string) => request(`/public/survey-reports/${shareId}/questions`),
   getPublicSurveyReportResponses: (shareId: string, opts: { page?: number; pageSize?: number; quality?: string; search?: string; questionId?: string } = {}) => {
     const params = new URLSearchParams();

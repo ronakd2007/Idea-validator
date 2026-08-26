@@ -9,6 +9,7 @@ import {
   TrendCard,
   ActivityTimeCards,
   QualityCard,
+  SegmentImpactCard,
   DropOffCard,
   ABResultsCard,
   QuestionBreakdown,
@@ -43,6 +44,10 @@ export default function PublicSurveyReportPage() {
   const [notFound, setNotFound] = useState(false);
   const [range, setRange] = useState('30d');
   const [tab, setTab] = useState<'analytics' | 'responses'>('analytics');
+  // Mirror the owner's analytics page: picking a segment/outcome question
+  // refetches so the shared report shows the same breakdown.
+  const [outcomeQuestionId, setOutcomeQuestionId] = useState('');
+  const [segmentQuestionId, setSegmentQuestionId] = useState('');
 
   // Responses tab
   const [questions, setQuestions] = useState<any[]>([]);
@@ -54,11 +59,11 @@ export default function PublicSurveyReportPage() {
 
   useEffect(() => {
     setLoading(true);
-    api.getPublicSurveyReport(shareId, { range })
+    api.getPublicSurveyReport(shareId, { range, outcomeQuestionId, segmentQuestionId })
       .then((d) => { setData(d); setNotFound(false); })
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
-  }, [shareId, range]);
+  }, [shareId, range, outcomeQuestionId, segmentQuestionId]);
 
   const canBrowseResponses = !!data?.settings?.showResponses;
 
@@ -163,6 +168,18 @@ export default function PublicSurveyReportPage() {
               <ActivityTimeCards activity={data.activity} time={data.time} />
             )}
             {settings.showQuality && data.quality && <QualityCard quality={data.quality} />}
+            {settings.showCharts && (
+              <SegmentImpactCard
+                eligibleSegmentQuestions={data.eligibleSegmentQuestions}
+                eligibleOutcomeQuestions={data.eligibleOutcomeQuestions}
+                segmentQuestionId={segmentQuestionId}
+                outcomeQuestionId={outcomeQuestionId}
+                onSegmentChange={setSegmentQuestionId}
+                onOutcomeChange={setOutcomeQuestionId}
+                segmentation={data.segmentation}
+                impact={data.impact}
+              />
+            )}
             {settings.showCharts && <ABResultsCard abResults={data.abResults || []} />}
             {settings.showCharts && data.dropOff && <DropOffCard dropOff={data.dropOff} />}
             {settings.showCharts && data.questions && (

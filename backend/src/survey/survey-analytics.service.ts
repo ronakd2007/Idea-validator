@@ -763,9 +763,19 @@ export class SurveyAnalyticsService {
    * from the response rather than hidden client-side, and respondent
    * identities never appear here at all.
    */
-  async getPublicReport(shareId: string, opts: { range?: string } = {}) {
+  async getPublicReport(
+    shareId: string,
+    opts: { range?: string; outcomeQuestionId?: string; segmentQuestionId?: string } = {}
+  ) {
     const { survey, settings } = await this.loadShared(shareId);
-    const full = await this.getAnalytics(survey.id, null, { range: opts.range });
+    const full = await this.getAnalytics(survey.id, null, {
+      range: opts.range,
+      // Segment/outcome selectors drive the same computation the owner's page
+      // uses. They only ever name a question of THIS survey — getAnalytics
+      // resolves them against the loaded question set and ignores anything else.
+      outcomeQuestionId: opts.outcomeQuestionId,
+      segmentQuestionId: opts.segmentQuestionId,
+    });
 
     const payload: any = {
       survey: { title: full.survey.title, status: full.survey.status, ideaTitle: full.survey.ideaTitle },
@@ -789,6 +799,10 @@ export class SurveyAnalyticsService {
       payload.abResults = full.abResults;
       payload.eligibleOutcomeQuestions = full.eligibleOutcomeQuestions;
       payload.eligibleSegmentQuestions = full.eligibleSegmentQuestions;
+      // The eligible lists above are only the dropdown options; without these
+      // two the shared page could offer the selectors but never show a result.
+      payload.segmentation = full.segmentation;
+      payload.impact = full.impact;
     }
     if (settings.showQuality) {
       payload.quality = full.quality;

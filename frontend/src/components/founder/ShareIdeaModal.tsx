@@ -8,9 +8,21 @@ const SECTION_TOGGLES: { key: string; label: string; hint: string }[] = [
   { key: 'showCounts', label: 'Evidence counts', hint: 'Number of validators and survey responses' },
   { key: 'showStrengthsRisks', label: 'Strengths & risks', hint: 'Top-rated and lowest-rated categories' },
   { key: 'showAiInsight', label: 'AI insight', hint: 'The verdict sentence from your AI summary' },
-  { key: 'showProblem', label: 'Problem statement', hint: 'Your full problem description — off by default' },
-  { key: 'showSolution', label: 'Solution description', hint: 'Your full solution — off by default' },
+  { key: 'showProblem', label: 'Problem statement', hint: 'Your full problem description' },
+  { key: 'showSolution', label: 'Solution description', hint: 'Your full solution' },
 ];
+
+// Must stay in step with SHARE_DEFAULTS in the backend's ideas.service.ts —
+// this is the fallback for an idea that has never been shared, so a mismatch
+// would silently persist the wrong visibility on the founder's first save.
+const SHARE_DEFAULTS: Record<string, boolean> = {
+  showScores: true,
+  showCounts: true,
+  showStrengthsRisks: true,
+  showAiInsight: true,
+  showProblem: true,
+  showSolution: true,
+};
 
 /**
  * Founder-facing control panel for the idea's public validation page.
@@ -37,9 +49,9 @@ export default function ShareIdeaModal({
       const raw = typeof initialShare.publicShareSettings === 'string'
         ? JSON.parse(initialShare.publicShareSettings || '{}')
         : initialShare.publicShareSettings || {};
-      return { showScores: true, showCounts: true, showStrengthsRisks: true, showAiInsight: true, showProblem: false, showSolution: false, ...raw };
+      return { ...SHARE_DEFAULTS, ...raw };
     } catch {
-      return { showScores: true, showCounts: true, showStrengthsRisks: true, showAiInsight: true, showProblem: false, showSolution: false };
+      return { ...SHARE_DEFAULTS };
     }
   });
   const [busy, setBusy] = useState(false);

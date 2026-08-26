@@ -16,3 +16,6 @@ backups/
 .env.production.local
 backup.log
 _seed_validators_tmp.ts
+
+# Local test-data seeder — never commit (writes fake validator accounts)
+backend/seed-validators.js

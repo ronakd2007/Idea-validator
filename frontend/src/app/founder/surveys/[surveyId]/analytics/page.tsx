@@ -12,6 +12,7 @@ import {
   TrendCard,
   ActivityTimeCards,
   QualityCard,
+  SegmentImpactCard,
   DropOffCard,
   ABResultsCard,
   QuestionBreakdown,
@@ -169,89 +170,16 @@ export default function SurveyAnalyticsPage() {
 
       <QualityCard quality={quality} linkBase={`/founder/surveys/${surveyId}/responses`} />
 
-      {/* Segment Analysis + Question Impact share the outcome selector */}
-      {(eligibleOutcomeQuestions.length > 0 || eligibleSegmentQuestions.length > 0) && (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mb-6">
-          <h3 className="font-semibold text-slate-900 mb-1">Who Actually Wants This?</h3>
-          <p className="text-xs text-slate-500 mb-4">Compare responses by segment and see which factors associate with your outcome of interest.</p>
-
-          <div className="flex flex-wrap gap-4 mb-6">
-            {eligibleSegmentQuestions.length > 0 && (
-              <label className="text-sm text-slate-600">
-                Compare by
-                <select value={segmentQuestionId} onChange={(e) => setSegmentQuestionId(e.target.value)} className="ml-2 border border-slate-200 rounded-md text-sm px-2 py-1.5">
-                  <option value="">Select a question...</option>
-                  {eligibleSegmentQuestions.map((q: any) => <option key={q.id} value={q.id}>{q.questionText}</option>)}
-                </select>
-              </label>
-            )}
-            {eligibleOutcomeQuestions.length > 0 && (
-              <label className="text-sm text-slate-600">
-                Outcome
-                <select value={outcomeQuestionId} onChange={(e) => setOutcomeQuestionId(e.target.value)} className="ml-2 border border-slate-200 rounded-md text-sm px-2 py-1.5">
-                  <option value="">Select a question...</option>
-                  {eligibleOutcomeQuestions.filter((q: any) => q.id !== segmentQuestionId).map((q: any) => <option key={q.id} value={q.id}>{q.questionText}</option>)}
-                </select>
-              </label>
-            )}
-          </div>
-
-          {segmentation && segmentation.segments.length === 0 && (
-            <p className="text-sm text-slate-500 mb-6">No responses have answered that question yet.</p>
-          )}
-
-          {segmentation && segmentation.segments.length > 0 && (
-            <div className="mb-6">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Segment Performance</p>
-              <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
-                {segmentation.segments.map((s: any) => (
-                  <div key={s.label} className="border border-slate-200 rounded-lg p-4">
-                    <p className="font-semibold text-slate-900">{s.label}</p>
-                    <p className="text-xs text-slate-500 mb-2">{s.responseCount} response{s.responseCount !== 1 ? 's' : ''}</p>
-                    {s.outcome?.value != null && (
-                      <p className="text-lg font-bold text-blue-600">
-                        {s.outcome.type === 'percent' ? `${s.outcome.value.toFixed(0)}%` : `${s.outcome.value.toFixed(1)}/${s.outcome.max}`}
-                      </p>
-                    )}
-                    {s.outcome?.type === 'distribution' && s.outcome.items.length > 0 && (
-                      <div className="space-y-1">
-                        {s.outcome.items.map((it: any) => (
-                          <div key={it.label} className="flex items-center justify-between gap-2 text-xs">
-                            <span className="text-slate-600 truncate">{it.label}</span>
-                            <span className="font-semibold text-blue-600 shrink-0">{it.pct.toFixed(0)}%</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {!outcomeQuestionId && eligibleOutcomeQuestions.filter((q: any) => q.id !== segmentQuestionId).length > 0 && (
-                <p className="text-xs text-slate-400 mt-3">
-                  Pick an Outcome question above to see how each group answered it.
-                </p>
-              )}
-            </div>
-          )}
-
-          {impact && (
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Question Impact — factors associated with &ldquo;{impact.outcomeQuestionText}&rdquo;</p>
-              <div className="space-y-2">
-                {impact.factors.map((f: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between border-b border-slate-100 py-2 text-sm">
-                    <span className="text-slate-700">{f.questionText}</span>
-                    <span className={`font-medium ${f.strength?.startsWith('Strong') ? 'text-blue-700' : f.strength?.startsWith('Moderate') ? 'text-blue-500' : 'text-slate-400'}`}>
-                      {f.strength || f.result}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
+      <SegmentImpactCard
+        eligibleSegmentQuestions={eligibleSegmentQuestions}
+        eligibleOutcomeQuestions={eligibleOutcomeQuestions}
+        segmentQuestionId={segmentQuestionId}
+        outcomeQuestionId={outcomeQuestionId}
+        onSegmentChange={setSegmentQuestionId}
+        onOutcomeChange={setOutcomeQuestionId}
+        segmentation={segmentation}
+        impact={impact}
+      />
 
       <ABResultsCard abResults={abResults} />
 

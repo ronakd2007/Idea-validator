@@ -8,8 +8,13 @@ import { SurveyAnalyticsService } from '../survey/survey-analytics.service';
 // Problem/solution default OFF — the pitch itself is the founder's IP; scores
 // and aggregate evidence are what a public "proof of validation" needs.
 export const SHARE_DEFAULTS = {
-  showProblem: false,
-  showSolution: false,
+  // Default to showing what the idea IS. A shared report whose problem and
+  // solution are blank reads as an unexplained score. Founders who want them
+  // hidden still toggle them off per idea, and shares enabled before this
+  // change keep their own stored settings — parseShareSettings only falls back
+  // to these defaults for keys that were never persisted.
+  showProblem: true,
+  showSolution: true,
   showScores: true,
   showStrengthsRisks: true,
   showAiInsight: true,
