@@ -591,7 +591,8 @@ export class AgentService {
 - A fact may only come from the numbered search results. Cite it as { "n": <result number>, "finding": "<what that source says>" }.
 - Never invent a URL, a price, a statistic or a company. If it is not in the results and you are not certain, say it is unknown.
 - Anything you reason yourself is an INFERENCE and must go in an inference field, never presented as an observed fact.
-- Unknown is a valid, valuable answer. A missing field is better than a plausible guess.`;
+- Unknown is a valid, valuable answer. A missing field is better than a plausible guess.
+- Citations belong ONLY in the citations array. Never write a { "n": ... } object inside a sentence — every other field is plain prose a founder reads.`;
 
   private framePrompt(ideaBlock: string): string {
     return `You are the research planner for a startup evidence agent. Turn this idea into a research brief and the web searches that would test it.

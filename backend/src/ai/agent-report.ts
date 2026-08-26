@@ -115,8 +115,25 @@ export interface AiVsExpert {
 
 // ---------- primitive guards ----------
 
+/**
+ * Models sometimes inline their citation objects into the prose instead of
+ * keeping them in the citations array. Left alone, the length clamp then cuts
+ * one in half and a founder reads `{"n":1,"finding":"An AI business idea`
+ * in the middle of a sentence. Citations are resolved server-side from real
+ * search results, so any that turn up inside text are noise by definition.
+ */
+function stripCitationNoise(value: string): string {
+  return value
+    .replace(/\{\s*"n"\s*:\s*\d+[^{}]*\}/g, '')
+    // A clamp in an earlier pass can leave one unterminated at the end.
+    .replace(/\{\s*"n"\s*:[\s\S]*$/, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 export function str(v: unknown, max: number): string {
-  return String(v ?? '').trim().slice(0, max);
+  // Strip before clamping: cutting first is what creates the broken fragment.
+  return stripCitationNoise(String(v ?? '')).slice(0, max).trim();
 }
 
 export function strOrNull(v: unknown, max: number): string | null {

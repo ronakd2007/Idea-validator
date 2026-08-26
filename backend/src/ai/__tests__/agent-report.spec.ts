@@ -69,6 +69,27 @@ describe('untrusted model output', () => {
     expect(out.indirect).toHaveLength(4);
   });
 
+  it('strips citation objects the model inlined into prose', () => {
+    const out = normalizeMarket({
+      trends: [
+        'Vertical SaaS is growing fast {"n":7,"finding":"valued at $94.86 billion"}',
+        // The clamp in an earlier pass can leave one unterminated.
+        'AI validation tools are emerging {"n":1,"finding":"An AI business idea validator pulls',
+      ],
+      summary: 'Solid demand {"n":2,"finding":"CAGR ~10%"} across the segment.',
+    });
+
+    expect(out.trends[0]).toBe('Vertical SaaS is growing fast');
+    expect(out.trends[1]).toBe('AI validation tools are emerging');
+    expect(out.summary).toBe('Solid demand across the segment.');
+    expect(JSON.stringify(out)).not.toContain('"n":');
+  });
+
+  it('leaves ordinary prose untouched', () => {
+    const out = normalizeMarket({ summary: 'Growth of 10% (2024) per industry reports.' });
+    expect(out.summary).toBe('Growth of 10% (2024) per industry reports.');
+  });
+
   it('survives a completely malformed payload', () => {
     const out = normalizeCompetitors('garbage' as any, sources);
     expect(out.direct).toEqual([]);
