@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException, ForbiddenException, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+import Groq from 'groq-sdk';
 import { PrismaService } from '../prisma/prisma.service';
 import { SurveyAnalyticsService } from '../survey/survey-analytics.service';
 import { DIMENSIONS } from '../ideas/score.util';
@@ -19,27 +20,19 @@ import {
   normalizeSynthesis,
   strList,
 } from './agent-report';
-import {
-  ClaudeClient,
-  ResearchState,
-  SourceUse,
-  createResearchState,
-  describeClaudeError,
-  webSearchUsed,
-} from './claude.client';
-import {
-  CompetitorsSchema,
-  CustomersSchema,
-  FrameSchema,
-  MarketSchema,
-  ScoreSchema,
-  SynthesisSchema,
-} from './agent-schemas';
+import { ResearchState, TavilyResult, createResearchState, tavilySearch, webSearchUsed } from './tavily.client';
 
+const MODEL = 'openai/gpt-oss-120b';
+// Groq's free tier enforces a per-request token budget and max_tokens counts
+// toward it — same constraint the survey generator works within.
+const GROQ_TPM_BUDGET = 7500;
+/** Spacing between calls so one run cannot trip the per-minute rate limit on its own. */
+const GROQ_CALL_GAP_MS = 2500;
+const GROQ_429_RETRY_WAIT_MS = 25_000;
 /**
  * A QUEUED/RUNNING row untouched for this long belongs to a process that is
- * gone: the pipeline writes progress every few seconds, so it can only go
- * quiet if the server restarted mid-run.
+ * gone: the pipeline writes progress every few seconds, so it can only go quiet
+ * if the server restarted mid-run.
  */
 const STALE_RUN_MS = 3 * 60_000;
 
@@ -60,6 +53,8 @@ export interface RunStep {
   status: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'SKIPPED';
   detail?: string;
 }
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 @Injectable()
 export class AgentService {
@@ -98,12 +93,12 @@ export class AgentService {
     if (trigger === 'manual' && idea.paymentStatus !== 'COMPLETED') {
       throw new BadRequestException('AI Deep Dive is available once your idea is submitted.');
     }
-    if (!ClaudeClient.isConfigured()) {
+    if (!process.env.GROQ_API_KEY) {
       if (trigger === 'auto') {
-        this.logger.warn(`Skipping AI Deep Dive for idea ${ideaId}: ANTHROPIC_API_KEY is not configured`);
+        this.logger.warn(`Skipping AI Deep Dive for idea ${ideaId}: GROQ_API_KEY is not configured`);
         return { runId: null, alreadyRunning: false };
       }
-      throw new ServiceUnavailableException('AI Deep Dive is not configured — ANTHROPIC_API_KEY is missing on the server.');
+      throw new ServiceUnavailableException('Groq API key not configured');
     }
 
     const active = await this.reconcileActiveRun(ideaId);
@@ -229,14 +224,15 @@ export class AgentService {
     };
 
     try {
-      const claude = ClaudeClient.fromEnv();
-
       await this.prisma.aiValidationRun.update({
         where: { id: runId },
         data: { status: 'RUNNING', startedAt: new Date(), steps: JSON.stringify(steps) },
       });
 
-      const idea = await this.prisma.idea.findUnique({ where: { id: ideaId }, include: { selfAssessment: true } });
+      const idea = await this.prisma.idea.findUnique({
+        where: { id: ideaId },
+        include: { selfAssessment: true },
+      });
       if (!idea) throw new Error('Idea no longer exists');
 
       const [surveyEvidence, expertValidations] = await Promise.all([
@@ -248,85 +244,53 @@ export class AgentService {
 
       // --- 1. FRAME -------------------------------------------------------
       await setStep('frame', 'RUNNING', 'Reading your idea and planning the research');
-      const frameRaw = await claude.extract(this.framePrompt(ideaBlock), FrameSchema, { effort: 'medium', maxTokens: 4000 });
+      const frameRaw = await this.groqJson(this.framePrompt(ideaBlock), 800);
       const brief = normalizeBrief(frameRaw);
       await setStep('frame', 'DONE', brief.oneLiner || 'Research brief ready');
+      // Queries come off the raw frame output: the normalized brief is the
+      // shape the report stores, and search queries are not part of it.
       const queries = this.normalizeQueries(frameRaw, brief, idea.title);
 
       // --- 2. COMPETITORS -------------------------------------------------
-      const competitorStep = await this.researchAndExtract(claude, research, {
-        usedFor: 'competitors',
-        stepKey: 'competitors',
-        setStep,
-        queries: queries.competitors,
-        maxSearches: 3,
-        researchPrompt: this.competitorsResearchPrompt(brief, queries.competitors),
-        extractPrompt: findings => this.competitorsExtractPrompt(brief, findings, research),
-        schema: CompetitorsSchema,
-      });
-      const competitors = normalizeCompetitors(competitorStep.data, research.sources);
-      const competitorCitations = competitorStep.citations;
-      await setStep(
-        'competitors',
-        'DONE',
-        competitors.direct.length
-          ? `Found ${competitors.direct.length} direct competitor${competitors.direct.length === 1 ? '' : 's'}`
-          : 'No clear direct competitors identified',
-      );
+      await setStep('competitors', 'RUNNING', 'Looking for competitors');
+      const competitorSearch = await this.runSearches(research, queries.competitors, 'competitors', detail => setStep('competitors', 'RUNNING', detail));
+      await sleep(GROQ_CALL_GAP_MS);
+      const competitorsRaw = await this.groqJson(this.competitorsPrompt(brief, competitorSearch.block), 2000);
+      const competitors = normalizeCompetitors(competitorsRaw, research.sources);
+      const competitorCitations = mapCitations(competitorsRaw?.citations, competitorSearch.results, 'competitors');
+      await setStep('competitors', 'DONE', competitors.direct.length ? `Found ${competitors.direct.length} direct competitor${competitors.direct.length === 1 ? '' : 's'}` : 'No clear direct competitors identified');
 
       // --- 3. MARKET ------------------------------------------------------
-      const marketStep = await this.researchAndExtract(claude, research, {
-        usedFor: 'market',
-        stepKey: 'market',
-        setStep,
-        queries: queries.market,
-        maxSearches: 2,
-        researchPrompt: this.marketResearchPrompt(brief, queries.market),
-        extractPrompt: findings => this.marketExtractPrompt(brief, findings, research),
-        schema: MarketSchema,
-      });
-      const market = normalizeMarket(marketStep.data);
-      const marketCitations = marketStep.citations;
+      await setStep('market', 'RUNNING', 'Researching market size and trends');
+      const marketSearch = await this.runSearches(research, queries.market, 'market', detail => setStep('market', 'RUNNING', detail));
+      await sleep(GROQ_CALL_GAP_MS);
+      const marketRaw = await this.groqJson(this.marketPrompt(brief, marketSearch.block), 1300);
+      const market = normalizeMarket(marketRaw);
+      const marketCitations = mapCitations(marketRaw?.citations, marketSearch.results, 'market');
       await setStep('market', 'DONE', market.size.tam ? 'Market sizing found in public sources' : 'No reliable public market sizing found');
 
       // --- 4. CUSTOMERS ---------------------------------------------------
-      const customerStep = await this.researchAndExtract(claude, research, {
-        usedFor: 'customers',
-        stepKey: 'customers',
-        setStep,
-        queries: queries.customers,
-        maxSearches: 2,
-        researchPrompt: this.customersResearchPrompt(brief, queries.customers),
-        extractPrompt: findings => this.customersExtractPrompt(brief, findings, research, surveyEvidence.text),
-        schema: CustomersSchema,
-      });
-      const customers = normalizeCustomers(customerStep.data, surveyEvidence.text);
-      const customerCitations = customerStep.citations;
-      await setStep(
-        'customers',
-        'DONE',
-        customers.segments.length ? `Profiled ${customers.segments.length} customer segment${customers.segments.length === 1 ? '' : 's'}` : 'Customer research complete',
-      );
+      await setStep('customers', 'RUNNING', 'Researching customer pain points');
+      const customerSearch = await this.runSearches(research, queries.customers, 'customers', detail => setStep('customers', 'RUNNING', detail));
+      await sleep(GROQ_CALL_GAP_MS);
+      const customersRaw = await this.groqJson(this.customersPrompt(brief, customerSearch.block, surveyEvidence.text), 1300);
+      const customers = normalizeCustomers(customersRaw, surveyEvidence.text);
+      const customerCitations = mapCitations(customersRaw?.citations, customerSearch.results, 'customers');
+      await setStep('customers', 'DONE', customers.segments.length ? `Profiled ${customers.segments.length} customer segment${customers.segments.length === 1 ? '' : 's'}` : 'Customer research complete');
 
       // --- 5. SYNTHESIS ---------------------------------------------------
       await setStep('synthesis', 'RUNNING', 'Building SWOT, risks and experiments');
+      await sleep(GROQ_CALL_GAP_MS);
       const synthesis = normalizeSynthesis(
-        await claude.extract(
-          this.synthesisPrompt(ideaBlock, competitors, market, customers, surveyEvidence.text),
-          SynthesisSchema,
-          { effort: 'high', maxTokens: 12000 },
-        ),
+        await this.groqJson(this.synthesisPrompt(ideaBlock, brief, competitors, market, customers, surveyEvidence.text), 2500),
       );
       await setStep('synthesis', 'DONE', `${synthesis.risks.length} risks, ${synthesis.experiments.length} experiments`);
 
       // --- 6. SCORE -------------------------------------------------------
       await setStep('score', 'RUNNING', 'Scoring against the validation rubric');
+      await sleep(GROQ_CALL_GAP_MS);
       const scored = normalizeScores(
-        await claude.extract(
-          this.scorePrompt(ideaBlock, competitors, market, customers, synthesis, surveyEvidence.text),
-          ScoreSchema,
-          { effort: 'high', maxTokens: 8000 },
-        ),
+        await this.groqJson(this.scorePrompt(ideaBlock, brief, competitors, market, customers, synthesis, surveyEvidence.text), 1800),
       );
 
       // --- assemble (everything below is server-computed) -----------------
@@ -346,7 +310,7 @@ export class AgentService {
         version: 1,
         generatedAt: new Date().toISOString(),
         webSearchUsed: usedWeb,
-        searchCount: research.searchCount,
+        searchCount: research.count,
 
         verdict: scored.verdict,
         verdictSummary: scored.verdictSummary,
@@ -386,13 +350,13 @@ export class AgentService {
           status: 'COMPLETED',
           report: JSON.stringify(report),
           webSearchUsed: usedWeb,
-          searchCount: research.searchCount,
+          searchCount: research.count,
           completedAt: new Date(),
           error: null,
         },
       });
     } catch (err: any) {
-      const message = describeClaudeError(err);
+      const message = this.describeFailure(err);
       const running = steps.find(s => s.status === 'RUNNING');
       if (running) running.status = 'FAILED';
       // The idea may have been deleted mid-run, taking the run row with it —
@@ -405,7 +369,7 @@ export class AgentService {
             error: message,
             steps: JSON.stringify(steps),
             webSearchUsed: webSearchUsed(research),
-            searchCount: research.searchCount,
+            searchCount: research.count,
             completedAt: new Date(),
           },
         })
@@ -414,75 +378,93 @@ export class AgentService {
     }
   }
 
+  // ---------- research + model plumbing ----------
+
+  private async runSearches(
+    state: ResearchState,
+    queries: string[],
+    usedFor: 'competitors' | 'market' | 'customers',
+    onProgress: (detail: string) => Promise<void>,
+  ): Promise<{ block: string; results: TavilyResult[] }> {
+    const results: TavilyResult[] = [];
+    const answers: string[] = [];
+
+    for (const query of queries) {
+      await onProgress(`Searching: "${query}"`);
+      const hit = await tavilySearch(state, query, usedFor);
+      if (!hit) continue;
+      if (hit.answer) answers.push(hit.answer);
+      for (const r of hit.results) {
+        if (results.length >= 10) break;
+        if (!results.some(existing => existing.url === r.url)) results.push(r);
+      }
+    }
+
+    if (!results.length) {
+      await onProgress('No web results — continuing with model knowledge');
+      return {
+        block: 'NO WEB RESULTS AVAILABLE. Use only what you already know with high confidence, and mark anything you cannot stand behind as unknown. Return an empty citations array.',
+        results: [],
+      };
+    }
+
+    await onProgress(`Found ${results.length} relevant result${results.length === 1 ? '' : 's'}`);
+    const numbered = results.map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.content}`).join('\n\n');
+    const answerBlock = answers.length ? `\n\nSEARCH ENGINE SUMMARY:\n${answers.join('\n')}` : '';
+    return { block: `SEARCH RESULTS (cite by number):\n${numbered}${answerBlock}`, results };
+  }
+
   /**
-   * One research step: search the live web, then turn the findings into
-   * structured data in a separate, tool-less call that can only cite the
-   * sources the search actually returned.
-   *
-   * Returns the citations alongside the data rather than stashing them on the
-   * service — this is a singleton, so per-run state kept on `this` would leak
-   * between two founders' runs happening at once.
+   * Structured model call. Two attempts at valid JSON (the second says so more
+   * bluntly), and one wait-and-retry on a rate limit — the same shape the rest
+   * of the AI features use.
    */
-  private async researchAndExtract<T>(
-    claude: ClaudeClient,
-    research: ResearchState,
-    opts: {
-      usedFor: SourceUse;
-      stepKey: StepKey;
-      setStep: (key: StepKey, status: RunStep['status'], detail?: string) => Promise<void>;
-      queries: string[];
-      maxSearches: number;
-      researchPrompt: string;
-      extractPrompt: (findings: string) => string;
-      schema: any;
-    },
-  ): Promise<{ data: T; citations: { title: string; url: string; finding: string | null; usedFor: string }[] }> {
-    await opts.setStep(opts.stepKey, 'RUNNING', `Searching: "${opts.queries[0]}"`);
+  private async groqJson(prompt: string, maxTokens: number): Promise<any> {
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) throw new ServiceUnavailableException('Groq API key not configured');
 
-    let findings = '';
-    let searched = false;
-    try {
-      const result = await claude.research(opts.researchPrompt, research, opts.usedFor, {
-        maxSearches: opts.maxSearches,
-        effort: 'medium',
-      });
-      findings = result.text;
-      searched = result.searched;
-    } catch (err: any) {
-      // Losing the web is not losing the run: the extraction below still
-      // happens, with nothing to cite, and the report says so.
-      this.logger.warn(`Web research failed for ${opts.usedFor}: ${err?.message}`);
-      research.webSearchFailed = true;
+    const promptTokens = Math.ceil(prompt.length / 4) + 250;
+    const budgeted = Math.max(800, Math.min(maxTokens, GROQ_TPM_BUDGET - promptTokens));
+    const groq = new Groq({ apiKey });
+
+    let rateLimitRetried = false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const content = attempt === 0 ? prompt : `${prompt}\n\nReturn ONLY the JSON object. No commentary, no markdown fences.`;
+      try {
+        const completion = await groq.chat.completions.create({
+          model: MODEL,
+          messages: [{ role: 'user', content }],
+          temperature: 0.3,
+          max_tokens: budgeted,
+          reasoning_effort: 'low',
+          response_format: { type: 'json_object' },
+        });
+        return JSON.parse(completion.choices[0]?.message?.content || '{}');
+      } catch (err: any) {
+        if (err instanceof SyntaxError) continue;
+        const status = err?.status ?? err?.response?.status;
+        if (status === 429 && !rateLimitRetried) {
+          rateLimitRetried = true;
+          attempt--; // the rate limit was not a bad-JSON attempt
+          await sleep(GROQ_429_RETRY_WAIT_MS);
+          continue;
+        }
+        throw err;
+      }
     }
-
-    await opts.setStep(
-      opts.stepKey,
-      'RUNNING',
-      searched
-        ? `Found ${this.sourcesFor(research, opts.usedFor).length} source${this.sourcesFor(research, opts.usedFor).length === 1 ? '' : 's'} — reading`
-        : 'No web results — continuing with model knowledge',
-    );
-
-    const extracted = await claude.extract<T>(opts.extractPrompt(findings), opts.schema, { effort: 'low', maxTokens: 10000 });
-    return {
-      data: extracted,
-      citations: mapCitations((extracted as any)?.citations, this.sourcesFor(research, opts.usedFor), opts.usedFor),
-    };
+    throw new Error('The AI returned an unreadable response.');
   }
 
-  private sourcesFor(research: ResearchState, usedFor: SourceUse) {
-    return research.sources.filter(s => s.usedFor === usedFor);
-  }
-
-  /** The numbered source list an extraction step is allowed to cite. */
-  private sourceBlock(research: ResearchState, usedFor: SourceUse): string {
-    const list = this.sourcesFor(research, usedFor);
-    if (!list.length) {
-      return 'NO WEB SOURCES WERE AVAILABLE. Return an empty citations array, set every source-dependent field to null, and mark anything you cannot stand behind as unknown.';
+  /** Same failure vocabulary as the rest of the AI features, kept as text for the run row. */
+  private describeFailure(err: any): string {
+    const status = err?.status ?? err?.response?.status;
+    if (status === 401 || status === 403) return 'The AI service rejected the API key — check GROQ_API_KEY on the server.';
+    if (status === 429) return 'The AI service is rate limited right now — try again in a minute.';
+    if (status === 413) return 'This idea produced too much research text for the AI service in one go.';
+    if ((status === 400 || status === 404) && /model|decommission/i.test(err?.message || '')) {
+      return 'The configured AI model is no longer available — the model name needs updating.';
     }
-    return `NUMBERED SOURCES (cite only by these numbers, and copy URLs only from this list):\n${list
-      .map((s, i) => `[${i + 1}] ${s.title}\nURL: ${s.url}`)
-      .join('\n')}`;
+    return err?.message ? `AI Deep Dive could not finish: ${err.message}` : 'AI Deep Dive could not finish — try again shortly.';
   }
 
   // ---------- context builders ----------
@@ -531,7 +513,9 @@ export class AgentService {
 
     try {
       const analytics: any = await this.surveyAnalytics.getAnalytics(survey.id, null, {});
-      const lines: string[] = [`Survey "${survey.title}" — ${analytics.summary.totalResponses} responses.`];
+      const lines: string[] = [
+        `Survey "${survey.title}" — ${analytics.summary.totalResponses} responses.`,
+      ];
       const primary = analytics.eligibleOutcomeQuestions?.[0];
       if (primary) {
         const qa: any = analytics.questions.find((q: any) => q.id === primary.id);
@@ -586,10 +570,10 @@ export class AgentService {
     };
   }
 
-  private mergeSources(research: ResearchState, citations: { title: string; url: string; finding: string | null; usedFor: string }[]) {
+  private mergeSources(state: ResearchState, citations: { title: string; url: string; finding: string | null; usedFor: string }[]) {
     const byUrl = new Map<string, { title: string; url: string; finding: string | null; usedFor: string }>();
-    for (const source of research.sources) byUrl.set(source.url, { title: source.title, url: source.url, finding: null, usedFor: source.usedFor });
-    // A citation only ever enriches a source the search really returned.
+    for (const source of state.sources) byUrl.set(source.url, { title: source.title, url: source.url, finding: null, usedFor: source.usedFor });
+    // A citation only ever enriches a source that was really returned.
     for (const cite of citations) {
       const existing = byUrl.get(cite.url);
       if (existing && !existing.finding) existing.finding = cite.finding;
@@ -599,15 +583,15 @@ export class AgentService {
 
   // ---------- prompts ----------
   //
-  // The research method is fixed here in code; the model only fills it in.
-  // That is the same division of labour the gap-survey generator uses — it
-  // decides wording, never the methodology.
+  // The research method is fixed here in code; the model only fills it in. That
+  // is the same division of labour the gap-survey generator uses — it decides
+  // wording, never the methodology.
 
   private readonly EVIDENCE_RULES = `EVIDENCE RULES (these override everything else):
-- A fact may only come from the numbered sources above. Cite it as { "n": <source number>, "finding": "<what that source says>" }.
-- Never invent a URL, a price, a statistic or a company. If it is not in the sources and you are not certain, say it is unknown.
-- Anything you reason yourself is an INFERENCE and belongs in an inference field, never presented as an observed fact.
-- Unknown is a valid, valuable answer. A null field is better than a plausible guess.`;
+- A fact may only come from the numbered search results. Cite it as { "n": <result number>, "finding": "<what that source says>" }.
+- Never invent a URL, a price, a statistic or a company. If it is not in the results and you are not certain, say it is unknown.
+- Anything you reason yourself is an INFERENCE and must go in an inference field, never presented as an observed fact.
+- Unknown is a valid, valuable answer. A missing field is better than a plausible guess.`;
 
   private framePrompt(ideaBlock: string): string {
     return `You are the research planner for a startup evidence agent. Turn this idea into a research brief and the web searches that would test it.
@@ -615,105 +599,114 @@ export class AgentService {
 THE IDEA
 ${ideaBlock}
 
+Return ONLY a single JSON object:
+{
+  "oneLiner": "one sentence describing the idea plainly",
+  "industry": "short industry label",
+  "targetCustomer": "who specifically buys or uses this",
+  "geography": "primary market, or 'Global' if unclear",
+  "keyUnknowns": ["the 3-5 things that most need evidence before this idea is credible"],
+  "queries": {
+    "competitors": ["up to 3 plain web searches that would surface real competing products"],
+    "market": ["up to 2 searches for market size, growth or trends"],
+    "customers": ["up to 2 searches for what these customers actually complain about"]
+  }
+}
+
 RULES:
 1. Queries are plain search phrases under 100 characters — no operators, no site: filters, no quotes.
 2. Queries must target current information a search engine can actually find.
 3. keyUnknowns are gaps in evidence, not tasks.`;
   }
 
-  private competitorsResearchPrompt(brief: any, queries: string[]): string {
-    return `Research the competitive landscape for this idea using web search.
+  private competitorsPrompt(brief: any, searchBlock: string): string {
+    return `You are researching the competitive landscape for this idea.
 
 THE IDEA: ${brief.oneLiner}
 INDUSTRY: ${brief.industry}
 TARGET CUSTOMER: ${brief.targetCustomer}
 
-Search for these, and follow up if the results are thin:
-${queries.map(q => `- ${q}`).join('\n')}
-
-Report what you actually found: which real products compete directly, which are indirect alternatives, what customers do instead of buying anything, and any pricing a source explicitly states. Name the source for each claim.
-
-If the searches turn up no real competitors, say so plainly. Do not fill the gap with companies you are not confident exist.`;
-  }
-
-  private competitorsExtractPrompt(brief: any, findings: string, research: ResearchState): string {
-    return `Structure these competitor research findings for the founder of: ${brief.oneLiner}
-
-RESEARCH FINDINGS
-${findings || 'No findings were produced — no web research was available.'}
-
-${this.sourceBlock(research, 'competitors')}
+${searchBlock}
 
 ${this.EVIDENCE_RULES}
 
-ADDITIONAL RULES:
-1. Up to 6 direct competitors. A URL is allowed ONLY if it appears in the numbered sources; otherwise null.
-2. pricing must be null unless a source states it. Never estimate a price.
+Return ONLY a single JSON object:
+{
+  "direct": [ { "name": string, "url": string|null, "whatTheyDo": string, "pricing": string|null, "strengths": [string], "weaknesses": [string], "threat": "LOW"|"MEDIUM"|"HIGH" } ],
+  "indirect": [ { "name": string, "description": string } ],
+  "substitutes": ["what customers do today instead of buying any product"],
+  "differentiationInference": "where this idea could differentiate — your reasoning, not a fact",
+  "summary": "what the competitive picture means for this founder",
+  "citations": [ { "n": number, "finding": string } ]
+}
+
+RULES:
+1. Up to 6 direct competitors. A URL is allowed ONLY if it appears in the results above; otherwise null.
+2. pricing must be null unless a result states it. Do not estimate prices.
 3. threat is how directly that company competes with THIS idea.
-4. differentiationInference is your reasoning, not a fact.`;
+4. If the results show no real competitors, return empty lists and say so in summary — do not invent plausible companies.`;
   }
 
-  private marketResearchPrompt(brief: any, queries: string[]): string {
-    return `Research the market for this idea using web search.
+  private marketPrompt(brief: any, searchBlock: string): string {
+    return `You are researching the market for this idea.
 
 THE IDEA: ${brief.oneLiner}
 INDUSTRY: ${brief.industry}
 GEOGRAPHY: ${brief.geography}
 
-Search for these, and follow up if the results are thin:
-${queries.map(q => `- ${q}`).join('\n')}
-
-Report what you actually found about market size, growth, trends, headwinds and any relevant regulation. Quote figures only where a source states them, with the year and the source. If no credible sizing exists in the results, say so — do not derive one from assumptions.`;
-  }
-
-  private marketExtractPrompt(brief: any, findings: string, research: ResearchState): string {
-    return `Structure these market research findings for the founder of: ${brief.oneLiner}
-
-RESEARCH FINDINGS
-${findings || 'No findings were produced — no web research was available.'}
-
-${this.sourceBlock(research, 'market')}
+${searchBlock}
 
 ${this.EVIDENCE_RULES}
 
-ADDITIONAL RULES:
-1. A market size figure may ONLY appear if a source states it. Include the year and source context, e.g. "$4.2B (2024, per [2])".
-2. If the sources do not support a size, that field MUST be null. Never derive TAM/SAM/SOM from assumptions or round numbers.
-3. Growth rates and percentages follow the same rule.`;
+Return ONLY a single JSON object:
+{
+  "size": { "tam": string|null, "sam": string|null, "som": string|null },
+  "growth": string|null,
+  "trends": ["trends that change this idea's odds"],
+  "headwinds": ["what is working against it"],
+  "regulation": string|null,
+  "summary": "what the market picture means for this founder",
+  "citations": [ { "n": number, "finding": string } ]
+}
+
+RULES:
+1. A market size figure may ONLY appear if a result states it. Include the figure with its year and source context, e.g. "$4.2B (2024, per [2])".
+2. If the results do not support a size, that field MUST be null. Never derive TAM/SAM/SOM from assumptions or round numbers.
+3. Percentages and growth rates follow the same rule.`;
   }
 
-  private customersResearchPrompt(brief: any, queries: string[]): string {
-    return `Research the customers for this idea using web search.
+  private customersPrompt(brief: any, searchBlock: string, surveyEvidence: string | null): string {
+    return `You are researching the customers for this idea.
 
 THE IDEA: ${brief.oneLiner}
 TARGET CUSTOMER: ${brief.targetCustomer}
 
-Search for these, and follow up if the results are thin:
-${queries.map(q => `- ${q}`).join('\n')}
+${searchBlock}
 
-Report what these customers actually say and do: their pain points, what they use today, how they buy. Paraphrase what sources say — never invent a quote. Where the evidence is thin, say what remains unknown.`;
-  }
-
-  private customersExtractPrompt(brief: any, findings: string, research: ResearchState, surveyEvidence: string | null): string {
-    return `Structure these customer research findings for the founder of: ${brief.oneLiner}
-
-RESEARCH FINDINGS
-${findings || 'No findings were produced — no web research was available.'}
-
-${this.sourceBlock(research, 'customers')}
-
-THE FOUNDER'S OWN SURVEY EVIDENCE (collected on this platform)
+THE FOUNDER'S OWN SURVEY EVIDENCE (collected on this platform):
 ${surveyEvidence || 'None yet — no customer survey responses have been collected for this idea.'}
 
 ${this.EVIDENCE_RULES}
 
-ADDITIONAL RULES:
-1. webEvidence comes only from the numbered sources. Do not restate the founder's survey data there — it is recorded separately.
+Return ONLY a single JSON object:
+{
+  "segments": [ { "name": string, "painPoints": [string], "jobsToBeDone": [string], "intensity": "LOW"|"MEDIUM"|"HIGH" } ],
+  "currentAlternatives": ["what they use today"],
+  "buyingBehavior": string|null,
+  "webEvidence": ["what the search results actually show about these customers — paraphrase, never a fabricated quote"],
+  "inferences": ["what you reason from the above, clearly your own reasoning"],
+  "unknowns": ["what remains unknown about these customers and would need direct research"],
+  "summary": "what the customer picture means for this founder",
+  "citations": [ { "n": number, "finding": string } ]
+}
+
+RULES:
+1. webEvidence comes only from the search results. Do not restate the founder's survey data there — it is already recorded separately.
 2. Never present an inference as observed customer behaviour.
-3. If there is no real evidence for a pain point, list it under unknowns instead of asserting it.`;
+3. If there is no real evidence of a pain point, list it under unknowns instead of asserting it.`;
   }
 
-  private synthesisPrompt(ideaBlock: string, competitors: any, market: any, customers: any, surveyEvidence: string | null): string {
+  private synthesisPrompt(ideaBlock: string, brief: any, competitors: any, market: any, customers: any, surveyEvidence: string | null): string {
     return `You are the senior analyst on a startup evidence team. The research below is already gathered. Synthesise it into a decision-focused assessment.
 
 THE IDEA
@@ -738,6 +731,17 @@ Open unknowns: ${customers.unknowns.join('; ') || 'none recorded'}
 THE FOUNDER'S OWN SURVEY EVIDENCE
 ${surveyEvidence || 'None yet — no customer survey responses have been collected for this idea.'}
 
+Return ONLY a single JSON object:
+{
+  "biggestOpportunity": "the single strongest thing this idea has going for it, in one sentence",
+  "biggestRisk": "the single thing most likely to kill it, in one sentence",
+  "swot": { "strengths": [string], "weaknesses": [string], "opportunities": [string], "threats": [string] },
+  "risks": [ { "risk": string, "category": "MARKET"|"EXECUTION"|"FINANCIAL"|"REGULATORY"|"TECHNOLOGY"|"COMPETITION"|"OTHER", "likelihood": "LOW"|"MEDIUM"|"HIGH", "impact": "LOW"|"MEDIUM"|"HIGH", "whyItMatters": string, "mitigation": string, "missingEvidence": string|null } ],
+  "businessModel": { "revenueModelFit": string, "pricingLogic": string, "costDrivers": [string], "monetizationRisks": [string], "keyAssumptions": [string] },
+  "gtm": { "initialCustomer": string, "channels": [string], "adoptionBarriers": [string], "earlyExperiment": string|null },
+  "experiments": [ { "title": string, "hypothesis": string, "whatToTest": string, "targetUsers": string, "successMetric": string, "sampleThreshold": string|null, "decisionInformed": string, "gapKey": "PRICING"|"REVENUE_POTENTIAL"|"CUSTOMER_DEMAND"|"DIFFERENTIATION"|"MARKET_OPPORTUNITY"|"RISK_MARKETADOPTION"|null } ]
+}
+
 RULES:
 1. Never claim the business model works. Say what would have to be true and what evidence is missing.
 2. missingEvidence names what nobody has checked yet; use null only when the risk is genuinely well evidenced.
@@ -746,7 +750,7 @@ RULES:
 5. Every claim must trace back to the research above or to the founder's own inputs.`;
   }
 
-  private scorePrompt(ideaBlock: string, competitors: any, market: any, customers: any, synthesis: any, surveyEvidence: string | null): string {
+  private scorePrompt(ideaBlock: string, brief: any, competitors: any, market: any, customers: any, synthesis: any, surveyEvidence: string | null): string {
     const rubric = DIMENSIONS.map(d => `- ${d.key} (${d.label}): ${d.fields.join(', ')} — each 0-10, so 0-50 total.`).join('\n');
 
     return `Score this idea on the SAME rubric human expert validators use on this platform. You are scoring independently: you have not seen any expert's scores.
@@ -768,12 +772,24 @@ ${surveyEvidence || 'None yet — no customer survey responses have been collect
 THE RUBRIC (score each dimension 0-50 as the sum of its five 0-10 criteria)
 ${rubric}
 
+Return ONLY a single JSON object:
+{
+  "dimensions": { ${DIMENSIONS.map(d => `"${d.key}": number`).join(', ')} },
+  "rationale": { ${DIMENSIONS.map(d => `"${d.key}": "one sentence citing what in the research drove this score"`).join(', ')} },
+  "verdict": "GO"|"GO_WITH_CHANGES"|"PIVOT"|"NO_GO",
+  "verdictSummary": "2-4 sentences explaining the verdict to the founder",
+  "keyEvidence": ["the specific findings that most support this verdict"],
+  "biggestUncertainty": "the one thing that could most change this assessment",
+  "nextValidationStep": "the single most useful thing the founder should do next to test this",
+  "confidence": number
+}
+
 RULES:
 1. Score against the evidence gathered, not against how appealing the idea sounds.
 2. founderFit may only be scored from the founder background, team and assumptions given. If that information is thin, score it conservatively and say so in its rationale.
 3. Do not output an overall score — it is computed from your dimension scores.
 4. confidence (0-100) must reflect EVIDENCE QUALITY, not how decisive you feel. Little or no evidence means low confidence even if the idea reads well.
-5. A low score is acceptable. A flattering score the evidence does not support is not.`;
+5. A low score is acceptable. A flattering score that the evidence does not support is not.`;
   }
 }
 

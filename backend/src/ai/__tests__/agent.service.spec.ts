@@ -29,9 +29,9 @@ function setup(overrides: { idea?: any; activeRun?: any } = {}) {
   return { service, prisma };
 }
 
-const OLD_ENV = process.env.ANTHROPIC_API_KEY;
-beforeEach(() => { process.env.ANTHROPIC_API_KEY = 'test-key'; });
-afterAll(() => { process.env.ANTHROPIC_API_KEY = OLD_ENV; });
+const OLD_ENV = process.env.GROQ_API_KEY;
+beforeEach(() => { process.env.GROQ_API_KEY = 'test-key'; });
+afterAll(() => { process.env.GROQ_API_KEY = OLD_ENV; });
 
 describe('startRun', () => {
   it('starts a run for a paid idea', async () => {
@@ -72,8 +72,8 @@ describe('startRun', () => {
     expect(prisma.aiValidationRun.create).not.toHaveBeenCalled();
   });
 
-  it('skips silently on the automatic path when the AI key is missing', async () => {
-    delete process.env.ANTHROPIC_API_KEY;
+  it('skips silently on the automatic path without a Groq key', async () => {
+    delete process.env.GROQ_API_KEY;
     const { service, prisma } = setup();
 
     await expect(service.startRun('idea1', 'founder1', 'auto')).resolves.toEqual({ runId: null, alreadyRunning: false });

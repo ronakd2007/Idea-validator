@@ -1,86 +1,73 @@
 import { AgentService } from '../agent.service';
-import { createResearchState, webSearchUsed } from '../claude.client';
+import { createResearchState } from '../tavily.client';
 
 /**
- * The seam between Claude's server-side web search and the report: which
- * sources a run is allowed to cite, and what an extraction step is shown.
- * Sources come out of real `web_search_tool_result` blocks, so this is what
- * stops an invented link from reaching a founder.
+ * The seam between live search and the model: what the prompt is shown, and how
+ * a citation index becomes a real source. A keyless run exercises none of this,
+ * so it is covered here with a stubbed fetch.
  */
 const service = new AgentService({} as any, {} as any);
-const sourceBlock = (state: any, usedFor: string) => (service as any).sourceBlock(state, usedFor);
-const sourcesFor = (state: any, usedFor: string) => (service as any).sourcesFor(state, usedFor);
+const runSearches = (state: any, queries: string[], onProgress: (detail: string) => Promise<void> = async () => {}) =>
+  (service as any).runSearches(state, queries, 'competitors', onProgress);
 const mergeSources = (state: any, citations: any[]) => (service as any).mergeSources(state, citations);
 
-function stateWithSources() {
-  const state = createResearchState();
-  state.sources.push(
-    { title: 'Acme pricing', url: 'https://acme.example.com', usedFor: 'competitors' },
-    { title: 'Globex review', url: 'https://globex.example.com', usedFor: 'competitors' },
-    { title: 'Market report', url: 'https://market.example.com', usedFor: 'market' },
-  );
-  return state;
-}
+const body = {
+  answer: 'Two products dominate.',
+  results: [
+    { title: 'Acme', url: 'https://acme.example.com', content: 'Acme charges $29/mo.' },
+    { title: 'Globex', url: 'https://globex.example.com', content: 'Globex is free.' },
+  ],
+};
+const ok = () => ({ ok: true, status: 200, json: async () => body });
 
-describe('sourceBlock', () => {
-  it('numbers only the sources gathered for that topic', () => {
-    const block = sourceBlock(stateWithSources(), 'competitors');
+describe('runSearches', () => {
+  it('numbers results so the model can only cite what it was shown', async () => {
+    const state = createResearchState('key', jest.fn().mockResolvedValue(ok()) as any);
 
-    expect(block).toContain('[1] Acme pricing');
-    expect(block).toContain('[2] Globex review');
-    expect(block).not.toContain('Market report');
+    const { block, results } = await runSearches(state, ['acme competitors']);
+
+    expect(block).toContain('[1] Acme');
+    expect(block).toContain('[2] Globex');
+    expect(block).toContain('https://acme.example.com');
+    expect(block).toContain('SEARCH ENGINE SUMMARY');
+    expect(results).toHaveLength(2);
   });
 
-  it('tells the model to claim nothing when no source was found', () => {
-    const block = sourceBlock(createResearchState(), 'competitors');
+  it('tells the model to claim nothing when there is no web evidence', async () => {
+    const state = createResearchState(undefined, jest.fn() as any);
 
-    expect(block).toContain('NO WEB SOURCES WERE AVAILABLE');
-    expect(block).toContain('empty citations array');
-    expect(block).toContain('null');
+    const { block, results } = await runSearches(state, ['acme competitors']);
+
+    expect(block).toContain('NO WEB RESULTS AVAILABLE');
+    expect(block).toContain('mark anything you cannot stand behind as unknown');
+    expect(results).toEqual([]);
   });
 
-  it('exposes the real URLs so a citation can be checked against them', () => {
-    const block = sourceBlock(stateWithSources(), 'market');
-    expect(block).toContain('https://market.example.com');
-  });
-});
+  it('reports the real search activity as progress', async () => {
+    const state = createResearchState('key', jest.fn().mockResolvedValue(ok()) as any);
+    const seen: string[] = [];
 
-describe('research state', () => {
-  it('reports no web research until a real source is collected', () => {
-    const empty = createResearchState();
-    expect(webSearchUsed(empty)).toBe(false);
-    expect(webSearchUsed(stateWithSources())).toBe(true);
+    await runSearches(state, ['crm tools for freelancers'], async (d: string) => { seen.push(d); });
+
+    expect(seen[0]).toBe('Searching: "crm tools for freelancers"');
+    expect(seen[seen.length - 1]).toContain('Found 2 relevant results');
   });
 
-  it('partitions sources by the topic they were gathered for', () => {
-    const state = stateWithSources();
-    expect(sourcesFor(state, 'competitors')).toHaveLength(2);
-    expect(sourcesFor(state, 'market')).toHaveLength(1);
-    expect(sourcesFor(state, 'customers')).toHaveLength(0);
-  });
-});
+  it('says so honestly when a search comes back empty', async () => {
+    const state = createResearchState('key', jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ results: [] }) }) as any);
+    const seen: string[] = [];
 
-describe('mergeSources', () => {
-  it('builds the list from real search hits and ignores invented ones', () => {
-    const merged = mergeSources(stateWithSources(), [
-      { title: 'Acme pricing', url: 'https://acme.example.com', finding: 'charges $29/mo', usedFor: 'competitors' },
-      { title: 'Fabricated', url: 'https://invented.example.com', finding: 'made up', usedFor: 'competitors' },
-    ]);
+    await runSearches(state, ['nothing here'], async (d: string) => { seen.push(d); });
 
-    expect(merged.map((s: any) => s.url)).toEqual([
-      'https://acme.example.com',
-      'https://globex.example.com',
-      'https://market.example.com',
-    ]);
-    expect(merged[0].finding).toBe('charges $29/mo');
-    expect(merged[1].finding).toBeNull();
+    expect(seen[seen.length - 1]).toContain('No web results');
   });
 
-  it('returns nothing when the run never got a search result', () => {
-    const merged = mergeSources(createResearchState(), [
-      { title: 'X', url: 'https://x.example.com', finding: 'x', usedFor: 'market' },
-    ]);
-    expect(merged).toEqual([]);
+  it('does not show the same URL to the model twice across queries', async () => {
+    const state = createResearchState('key', jest.fn().mockResolvedValue(ok()) as any);
+
+    const { results } = await runSearches(state, ['query one', 'query two']);
+
+    expect(results).toHaveLength(2);
   });
 });
 
@@ -122,5 +109,26 @@ describe('normalizeQueries', () => {
   it('falls back when the framing step returned nothing at all', () => {
     const out = normalizeQueries({});
     expect(out.competitors[0]).toContain('competitors');
+  });
+});
+
+describe('mergeSources', () => {
+  it('builds the source list from real search hits, not from the model', async () => {
+    const state = createResearchState('key', jest.fn().mockResolvedValue(ok()) as any);
+    await runSearches(state, ['q']);
+
+    const merged = mergeSources(state, [
+      { title: 'Acme', url: 'https://acme.example.com', finding: 'charges $29/mo', usedFor: 'competitors' },
+      { title: 'Fake', url: 'https://invented.example.com', finding: 'made up', usedFor: 'competitors' },
+    ]);
+
+    expect(merged.map((s: any) => s.url)).toEqual(['https://acme.example.com', 'https://globex.example.com']);
+    expect(merged[0].finding).toBe('charges $29/mo');
+    expect(merged[1].finding).toBeNull();
+  });
+
+  it('returns nothing when no search ever succeeded', () => {
+    const state = createResearchState(undefined, jest.fn() as any);
+    expect(mergeSources(state, [{ title: 'X', url: 'https://x.example.com', finding: 'x', usedFor: 'market' }])).toEqual([]);
   });
 });
