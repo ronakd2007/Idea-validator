@@ -24,7 +24,7 @@ import ShareIdeaModal from '@/components/founder/ShareIdeaModal';
 import VersionTimeline, { IdeaVersion } from '@/components/founder/VersionTimeline';
 import StatusBadge, { type BadgeTone } from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
-import { useToast } from '@/components/ui/feedback';
+import { useToast, useConfirm } from '@/components/ui/feedback';
 import AIChatPanel from '@/components/chat/AIChatPanel';
 import { STARTUP_STATUS_META } from '@/lib/startupTypes';
 import ReviewRating from '@/components/founder/ReviewRating';
@@ -80,6 +80,7 @@ export default function IdeaDashboardView({ ideaId, publicId }: { ideaId?: strin
   const isPublic = !!publicId;
   const router = useRouter();
   const toast = useToast();
+  const confirm = useConfirm();
   // Section visibility chosen by the founder in the share modal. Owner view
   // sees everything; public view sees what the payload's settings allow.
   const [shareSettings, setShareSettings] = useState<any>(null);
@@ -102,6 +103,10 @@ export default function IdeaDashboardView({ ideaId, publicId }: { ideaId?: strin
   const [surveysLoaded, setSurveysLoaded] = useState(false);
   const [downloadingReport, setDownloadingReport] = useState(false);
   const [reportError, setReportError] = useState('');
+  // Push-to-cloud is a local developer tool: the server reports whether a
+  // cloud target is configured, and the button exists only if it is.
+  const [cloudPush, setCloudPush] = useState<{ enabled: boolean; target: string }>({ enabled: false, target: '' });
+  const [pushingToCloud, setPushingToCloud] = useState(false);
   const [versions, setVersions] = useState<IdeaVersion[]>([]);
   const [shareOpen, setShareOpen] = useState(false);
   const [share, setShare] = useState<{ publicId: string | null; publicShareEnabled: boolean; publicShareSettings: any } | null>(null);
@@ -173,6 +178,8 @@ export default function IdeaDashboardView({ ideaId, publicId }: { ideaId?: strin
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
     api.getIdeaVersions(ideaId as string).then(setVersions).catch(() => {});
+    // Silent on failure: no cloud target simply means no button.
+    api.getCloudPushStatus().then(setCloudPush).catch(() => {});
     api.getMySurveys()
       .then(async (all: any[]) => {
         const mine = all.filter((s) => s.ideaId === ideaId);
@@ -301,6 +308,32 @@ export default function IdeaDashboardView({ ideaId, publicId }: { ideaId?: strin
       setReportError(err.message || 'Could not generate the report. Please try again.');
     } finally {
       setDownloadingReport(false);
+    }
+  };
+
+  /**
+   * Copies this idea into the live site's database. It writes to a real
+   * deployed database, so it confirms first and names the destination — a
+   * misfire here shows up on the site real founders use.
+   */
+  const handlePushToCloud = async () => {
+    if (viewMode) { toast.info('This action is disabled while viewing as another user.'); return; }
+    const ok = await confirm({
+      title: 'Push this idea to the live site?',
+      body: `"${idea?.title}" and everything attached to it — expert scores, AI Deep Dive reports — will be copied into ${cloudPush.target}. Pushing again later updates the same idea rather than making a second copy.`,
+      confirmLabel: 'Push to cloud',
+    });
+    if (!ok) return;
+
+    setPushingToCloud(true);
+    try {
+      const res: any = await api.pushIdeaToCloud(idea.id);
+      const parts = [`${res.validations} expert review${res.validations === 1 ? '' : 's'}`, `${res.aiRuns} AI report${res.aiRuns === 1 ? '' : 's'}`];
+      toast.success(`Pushed to ${res.target} — ${parts.join(', ')}.`);
+    } catch (err: any) {
+      toast.error(err.message || 'Could not push this idea to the cloud.');
+    } finally {
+      setPushingToCloud(false);
     }
   };
 
@@ -775,6 +808,24 @@ export default function IdeaDashboardView({ ideaId, publicId }: { ideaId?: strin
                   </svg>
                   Share
                 </button>
+                {/* Only rendered where a cloud target is configured — the
+                    deployed site has none, so this never appears there. */}
+                {cloudPush.enabled && (
+                  <button onClick={handlePushToCloud} disabled={pushingToCloud || viewMode}
+                    title={viewMode ? 'This action is disabled while viewing as another user.' : `Copy this idea to ${cloudPush.target}`}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition ${viewMode || pushingToCloud ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white border border-slate-200 text-slate-700 hover:border-blue-300 hover:text-blue-700'}`}>
+                    {pushingToCloud ? (
+                      <><span className="animate-spin inline-block w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full"></span> Pushing…</>
+                    ) : (
+                      <>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.9A5 5 0 1115.9 6H16a5 5 0 011 9.9M12 12v9m0-9l-3 3m3-3l3 3" />
+                        </svg>
+                        Push to Cloud
+                      </>
+                    )}
+                  </button>
+                )}
               </>
             )}
             {!isPublic && primaryAction?.kind === 'report' && (

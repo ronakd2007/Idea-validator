@@ -118,6 +118,11 @@ export const api = {
   suggestAssumptions: (input: { ideaId?: string; draft?: any }) =>
     request('/ai/suggest-assumptions', { method: 'POST', body: JSON.stringify(input) }),
 
+  // Push to cloud — copies an idea into the live site's database. Only enabled
+  // on a server with CLOUD_DATABASE_URL set, i.e. a local dev machine.
+  getCloudPushStatus: () => request('/cloud/status'),
+  pushIdeaToCloud: (ideaId: string) => request(`/cloud/push/${ideaId}`, { method: 'POST' }),
+
   // AI Deep Dive — autonomous research runs. Runs usually start themselves when
   // the idea is paid for; this is the manual start for older ideas and retries.
   runAiDeepDive: (ideaId: string) => request(`/ai/agent/run/${ideaId}`, { method: 'POST' }),

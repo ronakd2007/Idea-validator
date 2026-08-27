@@ -12,6 +12,7 @@ import { ValidationModule } from './validation/validation.module';
 import { PaymentModule } from './payment/payment.module';
 import { AdminModule } from './admin/admin.module';
 import { AiModule } from './ai/ai.module';
+import { CloudModule } from './cloud/cloud.module';
 import { SurveyModule } from './survey/survey.module';
 import { ChatModule } from './chat/chat.module';
 import { UploadsModule } from './uploads/uploads.module';
@@ -34,6 +35,7 @@ import { HealthController } from './health.controller';
     PaymentModule,
     AdminModule,
     AiModule,
+    CloudModule,
     SurveyModule,
     ChatModule,
     UploadsModule,
