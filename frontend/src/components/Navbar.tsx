@@ -70,6 +70,7 @@ export default function Navbar() {
                 <Link href="/founder/surveys" className={linkCls}>My Surveys</Link>
               )}
               <Link href="/startups" className={linkCls}>Startups</Link>
+              <Link href="/registry" className={linkCls}>Registry</Link>
               <Link href="/tutorial" className={linkCls}>Tutorial</Link>
               <Link href="/pricing" className={linkCls}>Pricing</Link>
               {inViewMode ? (
@@ -90,6 +91,7 @@ export default function Navbar() {
           ) : (
             <>
               <Link href="/startups" className={linkCls}>Startups</Link>
+              <Link href="/registry" className={linkCls}>Registry</Link>
               <Link href="/tutorial" className={linkCls}>Tutorial</Link>
               <Link href="/pricing" className={linkCls}>Pricing</Link>
               <Link href="/auth/login" className={linkCls}>Login</Link>
@@ -134,6 +136,7 @@ export default function Navbar() {
                 <Link href="/founder/surveys" className="py-2 text-sm text-slate-700" onClick={() => setMenuOpen(false)}>My Surveys</Link>
               )}
               <Link href="/startups" className="py-2 text-sm text-slate-700" onClick={() => setMenuOpen(false)}>Startups</Link>
+              <Link href="/registry" className="py-2 text-sm text-slate-700" onClick={() => setMenuOpen(false)}>Registry</Link>
               <Link href="/tutorial" className="py-2 text-sm text-slate-700" onClick={() => setMenuOpen(false)}>Tutorial</Link>
               <Link href="/pricing" className="py-2 text-sm text-slate-700" onClick={() => setMenuOpen(false)}>Pricing</Link>
               {!inViewMode && (
@@ -148,6 +151,7 @@ export default function Navbar() {
           ) : (
             <>
               <Link href="/startups" className="py-2 text-sm text-slate-700" onClick={() => setMenuOpen(false)}>Startups</Link>
+              <Link href="/registry" className="py-2 text-sm text-slate-700" onClick={() => setMenuOpen(false)}>Registry</Link>
               <Link href="/tutorial" className="py-2 text-sm text-slate-700" onClick={() => setMenuOpen(false)}>Tutorial</Link>
               <Link href="/pricing" className="py-2 text-sm text-slate-700" onClick={() => setMenuOpen(false)}>Pricing</Link>
               <Link href="/auth/login" className="py-2 text-sm text-slate-700 border-t border-slate-100 mt-1 pt-3" onClick={() => setMenuOpen(false)}>Login</Link>

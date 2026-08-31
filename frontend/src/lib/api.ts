@@ -306,6 +306,45 @@ export const api = {
   },
   getPublicStartup: (slug: string) => request(`/public/startups/${slug}`),
 
+  // ---------- Innovation & Patent Registry ----------
+  //
+  // Publication needs two locks: the founder ticks "make public" (which only
+  // submits it for review) and an admin approves. Nothing here can approve.
+
+  // Founder — their own records, private by default
+  getMyIpRecords: () => request('/ip'),
+  getIpRecord: (id: string) => request(`/ip/${id}`),
+  createIpRecord: (body: any) => request('/ip', { method: 'POST', body: JSON.stringify(body) }),
+  updateIpRecord: (id: string, body: any) => request(`/ip/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteIpRecord: (id: string) => request(`/ip/${id}`, { method: 'DELETE' }),
+  addIpDocument: (id: string, body: { fileUrl: string; fileName: string; documentType?: string }) =>
+    request(`/ip/${id}/documents`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteIpDocument: (id: string, documentId: string) =>
+    request(`/ip/${id}/documents/${documentId}`, { method: 'DELETE' }),
+  getDocumentUploadSignature: () => request('/uploads/document-signature', { method: 'POST' }),
+
+  // Admin — review queue and ecosystem analytics
+  getAdminIpRecords: (filters: Record<string, string | undefined> = {}) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) if (v && v !== 'ALL') p.set(k, v);
+    const qs = p.toString();
+    return request(`/admin/ip${qs ? `?${qs}` : ''}`);
+  },
+  getAdminIpRecord: (id: string) => request(`/admin/ip/${id}`),
+  getAdminIpStats: () => request('/admin/ip/stats'),
+  getAdminIpAnalytics: () => request('/admin/ip/analytics'),
+  reviewIpRecord: (id: string, body: { action: string; reviewMessage?: string; adminNote?: string }) =>
+    request(`/admin/ip/${id}/review`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  // Public registry (no auth) — only approved + opted-in records exist here
+  getPublicIpRecords: (filters: { type?: string; status?: string; state?: string; industry?: string; q?: string } = {}) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) if (v) p.set(k, v);
+    const qs = p.toString();
+    return request(`/public/ip${qs ? `?${qs}` : ''}`);
+  },
+  getPublicIpRecord: (id: string) => request(`/public/ip/${id}`),
+
   getIdeaChat: (ideaId: string) => request(`/chat/ideas/${ideaId}`),
   newIdeaChat: (ideaId: string) => request(`/chat/ideas/${ideaId}/new`, { method: 'POST' }),
   deleteIdeaChat: (ideaId: string) => request(`/chat/ideas/${ideaId}`, { method: 'DELETE' }),

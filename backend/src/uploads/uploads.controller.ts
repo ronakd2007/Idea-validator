@@ -26,4 +26,11 @@ export class UploadsController {
   imageSignature() {
     return this.uploadsService.createImageUploadSignature();
   }
+
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post('document-signature')
+  @Roles('FOUNDER')
+  documentSignature() {
+    return this.uploadsService.createDocumentUploadSignature();
+  }
 }

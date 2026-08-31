@@ -13,7 +13,7 @@ model User {
   email         String   @unique
   password      String? // null for Google-only accounts — no local password ever set
   googleId      String?  @unique
-  role          String   // FOUNDER | VALIDATOR | ADMIN
+  role          String // FOUNDER | VALIDATOR | ADMIN
   phone         String?
   phoneVerified Boolean  @default(false)
   isActive      Boolean  @default(true)
@@ -28,6 +28,7 @@ model User {
   activities       Activity[]
   aiConversations  AiConversation[]
   startups         Startup[]
+  ipRecords        IpRecord[]
 }
 
 model ValidatorProfile {
@@ -72,9 +73,9 @@ model Idea {
 
   // Public validation page — mirrors Survey.publicId: minted on first share,
   // non-guessable, revocable via the enabled flag without losing the link.
-  publicId            String?  @unique
-  publicShareEnabled  Boolean  @default(false)
-  publicShareSettings String   @default("{}") // JSON section toggles, see ideas.service SHARE_DEFAULTS
+  publicId            String? @unique
+  publicShareEnabled  Boolean @default(false)
+  publicShareSettings String  @default("{}") // JSON section toggles, see ideas.service SHARE_DEFAULTS
 
   // Last generated AI summary, persisted so the dashboard and public page
   // don't re-bill Groq on every view. Null until first generated.
@@ -88,16 +89,17 @@ model Idea {
   // dashboard is available immediately. Column kept only because dropping it
   // would need a destructive migration; nothing reads or writes it anymore.
   dashboardUnlockedAt DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  selfAssessment FounderFitSelfAssessment?
-  validations    ValidationResponse[]
-  payments       Payment[]
-  surveys        Survey[]
-  aiConversations AiConversation[]
+  selfAssessment   FounderFitSelfAssessment?
+  validations      ValidationResponse[]
+  payments         Payment[]
+  surveys          Survey[]
+  aiConversations  AiConversation[]
   aiValidationRuns AiValidationRun[]
-  startup        Startup?
+  startup          Startup?
+  ipRecords        IpRecord[]
 
   // Postgres does not index FK columns automatically — without this,
   // "all ideas by founder" is a sequential scan.
@@ -328,42 +330,42 @@ model Payment {
 // Mass Survey — Phase 1 (builder/draft) + Phase 2 (publish/respond).
 // status: DRAFT | LIVE | CLOSED (ARCHIVED reserved for a later phase, no migration needed — plain string).
 model Survey {
-  id            String    @id @default(cuid())
+  id            String   @id @default(cuid())
   ideaId        String? // optional — a survey does not require an Idea to exist; can be created standalone
-  idea          Idea?     @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  idea          Idea?    @relation(fields: [ideaId], references: [id], onDelete: Cascade)
   founderId     String
-  founder       User      @relation(fields: [founderId], references: [id])
+  founder       User     @relation(fields: [founderId], references: [id])
   title         String
-  description   String    @default("")
-  status        String    @default("DRAFT")
-  publicId      String?   @unique // set on publish; non-guessable, safe to share, never the internal cuid
+  description   String   @default("")
+  status        String   @default("DRAFT")
+  publicId      String?  @unique // set on publish; non-guessable, safe to share, never the internal cuid
   // Public results link — a SEPARATE token from publicId so revoking the
   // report never breaks the response-collection link (and vice versa).
   // Deliberately not @unique: adding a unique index to a populated table makes
   // `prisma db push` demand --accept-data-loss, which would fail the Render
   // build (see Idea.publicId). Uniqueness is enforced when minting the token.
   shareId       String?
-  shareEnabled  Boolean   @default(false)
-  shareSettings String    @default("{}") // JSON section toggles, see survey-share.util REPORT_SHARE_DEFAULTS
+  shareEnabled  Boolean  @default(false)
+  shareSettings String   @default("{}") // JSON section toggles, see survey-share.util REPORT_SHARE_DEFAULTS
   responseLimit Int?
-  collectEmail  Boolean   @default(false) // optional self-reported email field on the public form — not a verified/authenticated identity
+  collectEmail  Boolean  @default(false) // optional self-reported email field on the public form — not a verified/authenticated identity
   // RETIRED (2026-08-16): Focus Mode was removed entirely. Nothing reads or
   // writes this — it is kept only because dropping a populated column is a
   // destructive migration that would fail the deploy, exactly as with
   // Idea.dashboardUnlockedAt. Safe to drop in a deliberate maintenance step.
-  focusMode     Boolean   @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  focusMode     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   // Phase 4 — versioning. rootSurveyId is a soft-reference (mirrors Idea.revisionOf,
   // no FK) grouping every version of "the same" survey; null means this row is v1/root.
   rootSurveyId  String?
   versionNumber Int     @default(1)
 
-  questions SurveyQuestion[]
-  sessions  SurveySession[]
-  responses SurveyResponse[]
-  incentive SurveyIncentive?
+  questions       SurveyQuestion[]
+  sessions        SurveySession[]
+  responses       SurveyResponse[]
+  incentive       SurveyIncentive?
   aiConversations AiConversation[]
 
   @@index([founderId])
@@ -375,7 +377,7 @@ model SurveyQuestion {
   id           String   @id @default(cuid())
   surveyId     String
   survey       Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
-  type         String   // SHORT_ANSWER | PARAGRAPH | MULTIPLE_CHOICE | CHECKBOXES | DROPDOWN | YES_NO | RATING | LINEAR_SCALE | IMAGE_CHOICE
+  type         String // SHORT_ANSWER | PARAGRAPH | MULTIPLE_CHOICE | CHECKBOXES | DROPDOWN | YES_NO | RATING | LINEAR_SCALE | IMAGE_CHOICE
   questionText String
   description  String   @default("")
   required     Boolean  @default(false)
@@ -416,9 +418,9 @@ model SurveyQuestionOption {
 // Created when a respondent opens the public link — exists independently of
 // whether they ever submit, so Phase 3 can compute drop-off from session vs response counts.
 model SurveySession {
-  id             String    @id @default(cuid())
-  surveyId       String
-  survey         Survey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  id                String    @id @default(cuid())
+  surveyId          String
+  survey            Survey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
   token             String    @unique // opaque, held client-side; also the duplicate-submission guard
   startedAt         DateTime  @default(now())
   lastActivityAt    DateTime  @default(now())
@@ -444,17 +446,17 @@ model SurveySession {
 }
 
 model SurveyResponse {
-  id              String        @id @default(cuid())
-  surveyId        String
-  survey          Survey        @relation(fields: [surveyId], references: [id], onDelete: Cascade)
-  sessionId       String        @unique
-  session         SurveySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  respondentEmail String? // only populated if the founder enabled "collect email"
+  id                      String        @id @default(cuid())
+  surveyId                String
+  survey                  Survey        @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  sessionId               String        @unique
+  session                 SurveySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  respondentEmail         String? // only populated if the founder enabled "collect email"
   // true when the email came from a server-verified Google sign-in on the
   // public form (Google-Forms-style auto capture) rather than manual typing.
-  respondentEmailVerified Boolean @default(false)
-  submittedAt     DateTime      @default(now())
-  createdAt       DateTime      @default(now())
+  respondentEmailVerified Boolean       @default(false)
+  submittedAt             DateTime      @default(now())
+  createdAt               DateTime      @default(now())
 
   answers SurveyAnswer[]
 
@@ -476,17 +478,17 @@ model SurveyAnswer {
 // Phase 4 — optional, simple giveaway config. One per survey (founder can offer
 // no incentive at all, the default/common case).
 model SurveyIncentive {
-  id            String    @id @default(cuid())
-  surveyId      String    @unique
-  survey        Survey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
-  title         String
-  description   String    @default("")
-  numberOfWinners Int     @default(1)
-  eligibility   String    @default("")
-  closingDate   DateTime?
-  collectContact Boolean  @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  surveyId        String    @unique
+  survey          Survey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  title           String
+  description     String    @default("")
+  numberOfWinners Int       @default(1)
+  eligibility     String    @default("")
+  closingDate     DateTime?
+  collectContact  Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   entries IncentiveEntry[]
 }
@@ -627,20 +629,20 @@ model Startup {
 
   // ---- profile ----
   name        String
-  logoUrl     String  @default("")
-  tagline     String  @default("") // one-line description
-  about       String  @default("")
-  problem     String  @default("") // prefilled from Idea.problemStatement
-  solution    String  @default("") // prefilled from Idea.solutionDescription
-  product     String  @default("") // what's actually built — section hidden when empty
-  traction    String  @default("") // users/revenue/pilots — section hidden when empty
-  industry    String  @default("")
-  location    String  @default("")
+  logoUrl     String @default("")
+  tagline     String @default("") // one-line description
+  about       String @default("")
+  problem     String @default("") // prefilled from Idea.problemStatement
+  solution    String @default("") // prefilled from Idea.solutionDescription
+  product     String @default("") // what's actually built — section hidden when empty
+  traction    String @default("") // users/revenue/pilots — section hidden when empty
+  industry    String @default("")
+  location    String @default("")
   foundedYear Int?
-  website     String  @default("")
-  linkedinUrl String  @default("")
-  teamMembers String  @default("[]") // JSON [{ name, linkedinUrl }] — prefilled from the idea
-  stage       String  @default("IDEA")
+  website     String @default("")
+  linkedinUrl String @default("")
+  teamMembers String @default("[]") // JSON [{ name, linkedinUrl }] — prefilled from the idea
+  stage       String @default("IDEA")
 
   // JSON array from a fixed set: FUNDING | CUSTOMERS | MENTORS | PARTNERSHIPS | EMPLOYEES | OTHER
   lookingFor String @default("[]")
@@ -651,16 +653,112 @@ model Startup {
   validationDisplay String @default("{}")
 
   // DRAFT | PENDING_REVIEW | CHANGES_REQUESTED | APPROVED | REJECTED
-  status String @default("DRAFT")
+  status        String    @default("DRAFT")
   // Shown to the founder so they know what to fix. Distinct from adminNote,
   // which is private and must never leave an ADMIN-guarded route.
-  reviewMessage String  @default("")
-  adminNote     String  @default("")
+  reviewMessage String    @default("")
+  adminNote     String    @default("")
   submittedAt   DateTime?
   reviewedAt    DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([founderId])
   @@index([status]) // the public directory filters on this on every request
+}
+
+// ---------------------------------------------------------------------------
+// Innovation & Patent Registry
+//
+// A founder-maintained record of IP they have filed, hold, or plan to file.
+// IdeaValidator does NOT file, register, verify, or grant anything — every
+// field here is user-provided, and every surface that renders it says so.
+//
+// Publication is deliberately TWO locks, both of which must be open:
+//   1. visibility   = 'PUBLIC'    — the founder chose to publish
+//   2. reviewStatus = 'APPROVED'  — an admin accepted it
+// Both are enforced in the Prisma `where` of every public query, never in JS
+// after the fetch, so a serialization bug cannot put a record on the registry.
+//
+// Because review is only triggered by a publish request, records the founder
+// keeps private never enter the admin queue at all.
+//
+// Forward-compatibility: this table is intentionally standalone. A later AI IP
+// Strategy report or Disclosure Vault keys off ipRecordId/ideaId and needs no
+// change here.
+// ---------------------------------------------------------------------------
+model IpRecord {
+  id        String @id @default(cuid())
+  founderId String
+  founder   User   @relation(fields: [founderId], references: [id], onDelete: Cascade)
+
+  // Optional on purpose: a founder can hold a trademark that predates any idea
+  // on this platform. founderId is the real owner key; the idea link is context.
+  ideaId String?
+  idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+
+  title       String
+  description String @default("")
+  type        String @default("PATENT") // see IP_TYPES in ip.constants.ts
+
+  // The PATENT's status, managed by the founder. Never inferred, never verified
+  // by us. Distinct from reviewStatus below — do not merge these two fields.
+  status String @default("PLANNED") // see IP_STATUSES
+
+  applicationNumber String    @default("") // private unless explicitly opted in
+  filingDate        DateTime?
+  jurisdiction      String    @default("") // country, e.g. "India"
+  inventorNames     String    @default("[]") // JSON string array — never public
+  ownerName         String    @default("") // never public
+  authority         String    @default("") // e.g. "Indian Patent Office"
+  publicUrl         String    @default("") // patent-office link, opt-in
+  notes             String    @default("") // founder's private notes — NEVER public
+
+  // Founder location, captured on this form because no founder profile stores
+  // it. A fixed dropdown on the client keeps `state` countable — free text
+  // would yield "Gujarat"/"gujrat"/"GJ" and make the analytics meaningless.
+  city        String @default("")
+  state       String @default("")
+  institution String @default("") // college/institution, optional
+
+  // ---- lock 1: the founder's choice ----
+  visibility   String @default("PRIVATE") // PRIVATE | PUBLIC
+  publicFields String @default("{}") // JSON opt-ins, see PUBLIC_FIELD_DEFAULTS
+
+  // ---- lock 2: the admin's choice ----
+  reviewStatus  String    @default("DRAFT") // DRAFT | PENDING_REVIEW | APPROVED | CHANGES_REQUESTED | REJECTED
+  reviewMessage String    @default("") // shown to the founder so they can fix it
+  adminNote     String    @default("") // private; only ever leaves an ADMIN route
+  submittedAt   DateTime?
+  reviewedAt    DateTime?
+
+  documents IpDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([founderId])
+  @@index([ideaId])
+  @@index([status])
+  @@index([type])
+  @@index([jurisdiction])
+  @@index([visibility])
+  @@index([reviewStatus]) // the admin review queue filters on this
+  @@index([state]) // the Gujarat analytics group on this
+}
+
+// Supporting files for an IP record. These are NEVER included in any public
+// payload — no opt-in, no exception. Only the owning founder and an admin can
+// see a document URL.
+model IpDocument {
+  id         String   @id @default(cuid())
+  ipRecordId String
+  ipRecord   IpRecord @relation(fields: [ipRecordId], references: [id], onDelete: Cascade)
+
+  fileUrl      String
+  fileName     String
+  documentType String   @default("OTHER") // see IP_DOCUMENT_TYPES
+  createdAt    DateTime @default(now())
+
+  @@index([ipRecordId])
 }

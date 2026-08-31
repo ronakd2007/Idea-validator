@@ -34,6 +34,7 @@ export const ACTIVITY_CATEGORIES: { value: string; label: string }[] = [
   { value: 'SURVEYS', label: 'Surveys' },
   { value: 'VALIDATIONS', label: 'Validations' },
   { value: 'RESPONSES', label: 'Responses' },
+  { value: 'IP', label: 'IP & Patents' },
   { value: 'REPORTS', label: 'Reports' },
   { value: 'ACCOUNT', label: 'Account' },
   { value: 'ADMIN', label: 'Admin' },

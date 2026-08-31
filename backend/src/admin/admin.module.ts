@@ -2,11 +2,13 @@ import { Module } from '@nestjs/common';
 import { AdminController } from './admin.controller';
 import { AdminActivityController } from './admin-activity.controller';
 import { AdminStartupsController } from './admin-startups.controller';
+import { AdminIpController } from './admin-ip.controller';
 import { AdminService } from './admin.service';
 import { IdeasModule } from '../ideas/ideas.module';
 import { SurveyModule } from '../survey/survey.module';
 import { AuthModule } from '../auth/auth.module';
 import { StartupsModule } from '../startups/startups.module';
+import { IpModule } from '../ip/ip.module';
 
 @Module({
   // Imported so the admin inspection routes can reuse the existing idea
@@ -14,8 +16,10 @@ import { StartupsModule } from '../startups/startups.module';
   // AuthModule provides ViewAsService for the View-as-User endpoints;
   // StartupsModule provides the same status-transition logic the founder side
   // uses, so review actions can't diverge from it.
-  imports: [IdeasModule, SurveyModule, AuthModule, StartupsModule],
-  controllers: [AdminController, AdminActivityController, AdminStartupsController],
+  // IpModule provides IpService, so the registry review queue uses exactly
+  // the same status transitions the founder side does.
+  imports: [IdeasModule, SurveyModule, AuthModule, StartupsModule, IpModule],
+  controllers: [AdminController, AdminActivityController, AdminStartupsController, AdminIpController],
   providers: [AdminService],
 })
 export class AdminModule {}

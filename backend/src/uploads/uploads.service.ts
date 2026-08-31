@@ -11,6 +11,7 @@ export class UploadsService {
   // Everything lands under one folder so it's easy to find, meter, or purge.
   private static readonly FOLDER = 'ideavalidator/pitch-videos';
   private static readonly IMAGE_FOLDER = 'ideavalidator/startup-logos';
+  private static readonly DOCUMENT_FOLDER = 'ideavalidator/ip-documents';
 
   // Cloudinary's scheme: sort the signed params alphabetically, join as
   // k=v&k=v, append the API secret, SHA-1 the result.
@@ -22,8 +23,9 @@ export class UploadsService {
     return createHash('sha1').update(toSign + apiSecret).digest('hex');
   }
 
-  // Shared by every upload kind — only the destination folder differs.
-  private createSignature(folder: string, unavailableMessage: string) {
+  // Shared by every upload kind — the destination folder differs, and
+  // documents additionally need Cloudinary's `raw` resource type.
+  private createSignature(folder: string, unavailableMessage: string, resourceType = 'auto') {
     const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
     const apiKey = process.env.CLOUDINARY_API_KEY;
     const apiSecret = process.env.CLOUDINARY_API_SECRET;
@@ -40,6 +42,7 @@ export class UploadsService {
       apiKey,
       timestamp,
       folder,
+      resourceType,
       signature: this.sign({ folder, timestamp }, apiSecret),
     };
   }
@@ -57,6 +60,22 @@ export class UploadsService {
     return this.createSignature(
       UploadsService.IMAGE_FOLDER,
       'Image uploads are not configured on the server yet.'
+    );
+  }
+
+  // Supporting documents for an IP record (PDFs, scans). Uploaded with
+  // Cloudinary's `raw` resource type, which is what non-media files need.
+  //
+  // These files are NEVER referenced from a public payload — only the owning
+  // founder and an admin ever receive a URL (see IpService). The URL itself is
+  // long and random rather than access-controlled, so if these ever need to be
+  // genuinely locked down, switch this call to Cloudinary `type: authenticated`
+  // and serve them through a short-lived signed URL from an owner/admin route.
+  createDocumentUploadSignature() {
+    return this.createSignature(
+      UploadsService.DOCUMENT_FOLDER,
+      'Document uploads are not configured on the server yet. You can record the IP details without a file.',
+      'raw'
     );
   }
 }

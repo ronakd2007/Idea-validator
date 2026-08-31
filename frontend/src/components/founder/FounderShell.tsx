@@ -14,6 +14,7 @@ const NAV = [
   { href: '/founder', label: 'Home', exact: true },
   { href: '/founder/ideas', label: 'My Ideas' },
   { href: '/founder/surveys', label: 'Customer Surveys' },
+  { href: '/founder/ip', label: 'IP & Patents' },
   { href: '/founder/surveys/generate', label: 'Write a Survey with AI' },
 ];
 

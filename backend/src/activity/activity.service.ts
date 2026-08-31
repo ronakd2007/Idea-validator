@@ -41,6 +41,13 @@ export const ACTION_CATALOG: Record<string, { category: string; label: string }>
   VALIDATION_OPENED: { category: 'VALIDATIONS', label: 'Opened validation request' },
   VALIDATION_SUBMITTED: { category: 'VALIDATIONS', label: 'Submitted validation' },
 
+  // IP & Patents — the founder's own registry actions
+  IP_RECORD_CREATED: { category: 'IP', label: 'Added an IP record' },
+  IP_RECORD_UPDATED: { category: 'IP', label: 'Updated an IP record' },
+  IP_RECORD_SUBMITTED: { category: 'IP', label: 'Submitted an IP record for review' },
+  IP_RECORD_UNPUBLISHED: { category: 'IP', label: 'Removed an IP record from the public registry' },
+  IP_RECORD_DELETED: { category: 'IP', label: 'Deleted an IP record' },
+
   // Reports
   REPORT_DOWNLOADED: { category: 'REPORTS', label: 'Downloaded validation report' },
 
@@ -57,9 +64,12 @@ export const ACTION_CATALOG: Record<string, { category: string; label: string }>
   VIEW_AS_USER_ENDED: { category: 'ADMIN', label: 'Stopped viewing as user' },
   ADMIN_SURVEY_STATUS_CHANGED: { category: 'ADMIN', label: 'Changed survey status' },
   ADMIN_SURVEY_DELETED: { category: 'ADMIN', label: 'Deleted survey' },
+  ADMIN_IP_APPROVED: { category: 'ADMIN', label: 'Approved IP record for the public registry' },
+  ADMIN_IP_REJECTED: { category: 'ADMIN', label: 'Rejected IP record' },
+  ADMIN_IP_CHANGES_REQUESTED: { category: 'ADMIN', label: 'Requested changes to IP record' },
 };
 
-export const ACTIVITY_CATEGORIES = ['ACCOUNT', 'IDEAS', 'SURVEYS', 'RESPONSES', 'VALIDATIONS', 'REPORTS', 'ADMIN'];
+export const ACTIVITY_CATEGORIES = ['ACCOUNT', 'IDEAS', 'SURVEYS', 'RESPONSES', 'VALIDATIONS', 'IP', 'REPORTS', 'ADMIN'];
 export const ACTOR_ROLES = ['FOUNDER', 'VALIDATOR', 'RESPONDENT', 'ADMIN'];
 
 const ANONYMOUS_LABEL = 'Anonymous respondent';

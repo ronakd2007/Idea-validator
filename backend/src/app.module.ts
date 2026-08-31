@@ -17,6 +17,7 @@ import { SurveyModule } from './survey/survey.module';
 import { ChatModule } from './chat/chat.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { StartupsModule } from './startups/startups.module';
+import { IpModule } from './ip/ip.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -40,6 +41,7 @@ import { HealthController } from './health.controller';
     ChatModule,
     UploadsModule,
     StartupsModule,
+    IpModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
